@@ -28,6 +28,11 @@
 #define TOUCH_MISO 39
 #define TOUCH_CLK 25
 
+// LED RGB intégrée
+#define LED_RED 4
+#define LED_GREEN 16
+#define LED_BLUE 17
+
 // ===== OBJETS =====
 TFT_eSPI tft = TFT_eSPI();
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
@@ -84,6 +89,11 @@ String closed_trades_details[10]; // Store up to 10 closed trade details
 float closed_trades_pnl[10]; // Store P&L for each closed trade
 String closed_trades_dates[10]; // Store close dates
 
+// ===== VARIABLES LED RGB =====
+bool led_blink_state = false;
+unsigned long last_led_blink = 0;
+int blink_speed = 500; // Vitesse de clignotement en ms
+
 // ===== COULEURS =====
 #define COLOR_BG 0x0000
 #define COLOR_RED 0xF800
@@ -113,6 +123,10 @@ void handleTouch();
 void syncTime();
 void closeTrade(String positionId);
 void cancelOrder(String orderId);
+
+// LED RGB functions
+void updateLedPnl();
+void setLedRGB(int red, int green, int blue);
 
 // =====================================================
 // TÂCHE FREERTOS POUR MISES À JOUR PRIX (CORE 1)
@@ -171,7 +185,23 @@ void setup() {
   touch.setRotation(1);
   Serial.println("Touch init OK");
   
-  // Init SPIFFS
+  // Init LED RGB
+  pinMode(LED_RED, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  
+  // Test LED au démarrage (cyan = rouge OFF + vert ON + bleu ON)
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_GREEN, HIGH);
+  digitalWrite(LED_BLUE, HIGH);
+  delay(500);
+  
+  // Éteindre LED
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_GREEN, LOW);
+  digitalWrite(LED_BLUE, LOW);
+  
+  Serial.println("LED RGB OK");
   if (!SPIFFS.begin(true)) {
     showError("SPIFFS FAIL!");
     while(1);
@@ -218,6 +248,9 @@ void loop() {
   
   // Gérer les appuis tactiles
   handleTouch();
+  
+  // ✨ LED RGB - Indicateur P&L
+  updateLedPnl();
   
   delay(100);
 }
@@ -1979,4 +2012,112 @@ void closeTrade(String positionId) {
     current_screen = SCREEN_POSITIONS;
     showPositionsScreen();
   }
+}
+
+// =====================================================
+// LED RGB - INDICATEUR P&L AVEC 5 VITESSES
+// =====================================================
+void updateLedPnl() {
+  // Pas de positions = LED éteinte
+  if (running_trades_count == 0) {
+    setLedRGB(0, 0, 0);
+    return;
+  }
+  
+  // Calculer P&L total en %
+  float total_margin = 0;
+  float total_pnl_sats = 0;
+  
+  for (int i = 0; i < running_trades_count; i++) {
+    total_margin += running_trades_margin[i];
+    total_pnl_sats += running_trades_pnl_sats[i];
+  }
+  
+  float pnl_percent = (total_margin > 0) ? (total_pnl_sats / total_margin) * 100.0 : 0;
+  float pnl_abs = abs(pnl_percent); // Valeur absolue pour les 2 sens
+  
+  // ====== 5 PALIERS DE VITESSE ======
+  int current_blink_speed = 0;
+  bool continuous_mode = false;
+  
+  if (pnl_abs < 5) {
+    // 🐌 NIVEAU 0 : < 5% = Très lent (presque pas de mouvement)
+    current_blink_speed = 2000; // 2 secondes
+  } 
+  else if (pnl_abs < 25) {
+    // 🚶 NIVEAU 1 : 5-25% = Vitesse de base
+    current_blink_speed = 1000; // 1 seconde
+  } 
+  else if (pnl_abs < 50) {
+    // 🏃 NIVEAU 2 : 25-50% = x2 plus rapide
+    current_blink_speed = 500; // 0.5 seconde
+  } 
+  else if (pnl_abs < 75) {
+    // 🚀 NIVEAU 3 : 50-75% = x4 plus rapide
+    current_blink_speed = 250; // 0.25 seconde
+  } 
+  else if (pnl_abs < 100) {
+    // ⚡ NIVEAU 4 : 75-100% = x8 plus rapide (super rapide)
+    current_blink_speed = 125; // 0.125 seconde
+  } 
+  else {
+    // 🔥 NIVEAU 5 : >100% = MODE CONTINU (allumé en permanence)
+    continuous_mode = true;
+  }
+  
+  // ====== MODE CONTINU (>100%) ======
+  if (continuous_mode) {
+    // LED allumée en permanence
+    if (pnl_percent >= 0) {
+      setLedRGB(0, 1, 0); // VERT fixe 🟢
+    } else {
+      setLedRGB(1, 0, 0); // ROUGE fixe 🔴
+    }
+    
+    // Log une seule fois
+    static bool continuous_logged = false;
+    if (!continuous_logged) {
+      Serial.println("🔥 MODE CONTINU ! P&L: " + String(pnl_percent, 1) + "%");
+      continuous_logged = true;
+    }
+    return;
+  }
+  
+  // ====== MODE CLIGNOTANT ======
+  if (millis() - last_led_blink > current_blink_speed) {
+    led_blink_state = !led_blink_state;
+    last_led_blink = millis();
+    
+    // Log changement de niveau
+    static int last_level = -1;
+    int current_level = (pnl_abs < 5) ? 0 : 
+                       (pnl_abs < 25) ? 1 : 
+                       (pnl_abs < 50) ? 2 : 
+                       (pnl_abs < 75) ? 3 : 4;
+    
+    if (current_level != last_level) {
+      String level_name[] = {"🐌 TRÈS LENT", "🚶 NORMAL", "🏃 RAPIDE", "🚀 TRÈS RAPIDE", "⚡ ULTRA RAPIDE"};
+      Serial.println("LED Niveau " + String(current_level) + ": " + level_name[current_level] + " | P&L: " + String(pnl_percent, 1) + "%");
+      last_level = current_level;
+    }
+    
+    if (led_blink_state) {
+      // LED allumée
+      if (pnl_percent >= 0) {
+        setLedRGB(0, 1, 0); // VERT 🟢
+      } else {
+        setLedRGB(1, 0, 0); // ROUGE 🔴
+      }
+    } else {
+      // LED éteinte
+      setLedRGB(0, 0, 0); // OFF
+    }
+  }
+}
+
+void setLedRGB(int red, int green, int blue) {
+  // La LED RGB du Sunton est active à l'état LOW (logique inversée)
+  digitalWrite(LED_RED, red ? LOW : HIGH);
+  digitalWrite(LED_GREEN, green ? LOW : HIGH);
+  digitalWrite(LED_BLUE, blue ? LOW : HIGH);
 }
