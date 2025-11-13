@@ -43,6 +43,12 @@ bool config_mode = false;
 bool api_connected = false;
 float btc_price = 0;
 
+// Mutex pour protéger l'accès à l'écran TFT
+SemaphoreHandle_t tft_mutex;
+
+// Tâche FreeRTOS pour les mises à jour de prix
+TaskHandle_t price_update_task = NULL;
+
 // Navigation
 enum Screen { SCREEN_HOME, SCREEN_WALLET, SCREEN_POSITIONS, SCREEN_HISTORY };
 Screen current_screen = SCREEN_HOME;
@@ -108,6 +114,36 @@ void closeTrade(String positionId);
 void cancelOrder(String orderId);
 
 // =====================================================
+// TÂCHE FREERTOS POUR MISES À JOUR PRIX (CORE 1)
+// =====================================================
+void priceUpdateTask(void *pvParameters) {
+  Serial.println("🚀 Tâche prix démarrée sur core 1");
+  
+  static unsigned long last_wallet_update = 0;
+  
+  while (true) {
+    if (api_connected && current_screen == SCREEN_HOME) {
+      // Prendre le mutex TFT avant d'accéder à l'écran
+      if (xSemaphoreTake(tft_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        updatePrice();
+        xSemaphoreGive(tft_mutex);
+      }
+    }
+    
+    // Mise à jour des données wallet toutes les 30 secondes
+    if (millis() - last_wallet_update > 30000) {
+      if (api_connected && (current_screen == SCREEN_WALLET || current_screen == SCREEN_POSITIONS || current_screen == SCREEN_HISTORY)) {
+        updateWalletData();
+      }
+      last_wallet_update = millis();
+    }
+    
+    // Attendre 2 secondes pour une mise à jour plus fluide
+    vTaskDelay(pdMS_TO_TICKS(2000));
+  }
+}
+
+// =====================================================
 // SETUP
 // =====================================================
 void setup() {
@@ -141,6 +177,14 @@ void setup() {
   }
   Serial.println("SPIFFS OK");
   
+  // Créer le mutex TFT
+  tft_mutex = xSemaphoreCreateMutex();
+  if (tft_mutex == NULL) {
+    Serial.println("Erreur création mutex TFT!");
+  } else {
+    Serial.println("Mutex TFT créé ✓");
+  }
+  
   // Charger config
   loadConfig();
   
@@ -169,19 +213,6 @@ void loop() {
     delay(3000);
     connectWiFi();
     return;
-  }
-  
-  // Update prix toutes les 5s
-  static unsigned long last_update = 0;
-  if (millis() - last_update > 5000) {
-    if (current_screen == SCREEN_HOME) {
-      updatePrice();
-    } else if (current_screen == SCREEN_WALLET) {
-      updateWalletData();
-    } else if (current_screen == SCREEN_POSITIONS) {
-      updateWalletData(); // Also update positions data
-    }
-    last_update = millis();
   }
   
   // Gérer les appuis tactiles
@@ -525,6 +556,18 @@ void testAPIConnection() {
     tft.println("CONNECTE!");
     
     delay(2000);
+    
+    // Créer la tâche de mise à jour des prix sur le core 1
+    xTaskCreatePinnedToCore(
+      priceUpdateTask,      // Fonction de la tâche
+      "PriceUpdate",        // Nom de la tâche
+      8192,                 // Taille de la pile (8KB) - augmenté pour éviter stack overflow
+      NULL,                 // Paramètre
+      1,                    // Priorité
+      &price_update_task,   // Handle de la tâche
+      1                     // Core 1 (le core 0 est pour loop())
+    );
+    
     showMainScreen();
   } else {
     api_connected = false;
@@ -566,7 +609,7 @@ void showMainScreen() {
   
   // Prix (aligné à gauche)
   tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(4);
+  tft.setTextSize(0); // Réduit à taille 0 pour "Loading..." (moitié de 1)
   tft.fillRect(10, 60, 180, 30, COLOR_BG); // Prix aligné à gauche
   tft.setCursor(10, 60);
   tft.println("Loading...");
@@ -694,10 +737,14 @@ void showMainScreen() {
 // UPDATE PRIX
 // =====================================================
 void updatePrice() {
+  // Vérifier que nous sommes toujours sur l'écran HOME
+  if (current_screen != SCREEN_HOME) return;
+  
   if (!api_connected) return;
   
   HTTPClient http;
   http.begin("https://api.lnmarkets.com/v3/futures/ticker");
+  http.setTimeout(3000); // Timeout 3s pour éviter blocages
   
   int httpCode = http.GET();
   
@@ -713,10 +760,10 @@ void updatePrice() {
       if (new_price != btc_price) {
         btc_price = new_price;
         
-        // Effacer complètement la zone du prix (zone plus large pour être sûr)
-        tft.fillRect(8, 58, 185, 35, COLOR_BG);
+        // Effacer complètement la zone du prix (allongée de 1cm pour éviter les carrés)
+        tft.fillRect(8, 58, 172, 35, COLOR_BG);
         
-        // Afficher nouvelle valeur
+        // Afficher nouvelle valeur (prix en USD direct)
         tft.setTextColor(TFT_WHITE);
         tft.setTextSize(4);
         tft.setCursor(10, 60);
@@ -1511,38 +1558,54 @@ void showHistoryScreen() {
 // UPDATE WALLET DATA
 // =====================================================
 void updateWalletData() {
+  Serial.println("\n=== UPDATE WALLET DATA ===");
+  
   if (api_key == "" || api_key == "public") {
-    Serial.println("Pas de clés API - mode public");
+    Serial.println("❌ Pas de clés API valides - mode public");
     return;
   }
   
-  Serial.println("Récupération données wallet...");
+  Serial.println("🔄 Récupération données wallet...");
+  Serial.print("API Key: ");
+  Serial.println(api_key.substring(0, 10) + "...");
   
   // Get account balance
+  Serial.println("📡 Appel API: GET /account");
   String response = makeAuthenticatedRequest("GET", "/account", "");
   
-  if (response != "") {
+  if (response == "") {
+    Serial.println("❌ Aucune réponse de l'API /account");
+  } else {
+    Serial.print("📨 Réponse /account: ");
+    Serial.println(response.substring(0, 100) + "...");
+    
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
-      balance_sats = doc["balance"].as<long>();
-      
-      // Calculer balance USD
-      if (btc_price > 0) {
-        balance_usd = (balance_sats / 100000000.0) * btc_price;
+      if (doc.containsKey("balance")) {
+        balance_sats = doc["balance"].as<long>();
+        
+        // Calculer balance USD
+        if (btc_price > 0) {
+          balance_usd = (balance_sats / 100000000.0) * btc_price;
+        }
+        
+        Serial.print("✅ Balance trouvée: ");
+        Serial.print(balance_sats);
+        Serial.println(" sats");
+      } else {
+        Serial.println("❌ Clé 'balance' non trouvée dans la réponse");
+        Serial.println("Clés disponibles: " + String(doc.size()));
       }
-      
-      Serial.print("Balance disponible: ");
-      Serial.print(balance_sats);
-      Serial.println(" sats");
     } else {
-      Serial.println("Erreur parse JSON wallet");
+      Serial.print("❌ Erreur parsing JSON wallet: ");
+      Serial.println(error.c_str());
     }
   }
   
   // Get running trades
-  Serial.println("Récupération trades en cours...");
+  Serial.println("📡 Appel API: GET /futures/isolated/trades/running");
   String tradesResponse = makeAuthenticatedRequest("GET", "/futures/isolated/trades/running", "");
   
   running_trades_count = 0;
@@ -1558,13 +1621,22 @@ void updateWalletData() {
     running_trades_margin[i] = 0;
   }
   
-  if (tradesResponse != "") {
+  if (tradesResponse == "") {
+    Serial.println("❌ Aucune réponse de l'API trades/running");
+  } else {
+    Serial.print("📨 Réponse trades/running: ");
+    Serial.println(tradesResponse.substring(0, 100) + "...");
+    
     JsonDocument tradesDoc;
     DeserializationError tradesError = deserializeJson(tradesDoc, tradesResponse);
     
     if (!tradesError && tradesDoc.is<JsonArray>()) {
       JsonArray trades = tradesDoc.as<JsonArray>();
       running_trades_count = trades.size();
+      
+      Serial.print("✅ ");
+      Serial.print(running_trades_count);
+      Serial.println(" trades trouvés");
       
       int detailIndex = 0;
       for (JsonVariant trade : trades) {
@@ -1611,13 +1683,12 @@ void updateWalletData() {
         }
       }
       
-      Serial.print("Trades en cours: ");
-      Serial.print(running_trades_count);
-      Serial.print(", Margin utilisé: ");
+      Serial.print("💰 Margin total en positions: ");
       Serial.print(margin_in_positions);
       Serial.println(" sats");
     } else {
-      Serial.println("Erreur parse JSON trades");
+      Serial.print("❌ Erreur parsing JSON trades: ");
+      Serial.println(tradesError.c_str());
     }
   }
   
