@@ -67,6 +67,7 @@ int running_trades_count = 0;
 long margin_in_positions = 0;
 String running_trades_details[5]; // Store up to 5 trade details
 float running_trades_pnl[5]; // Store P&L % for each trade
+long running_trades_pnl_sats[5]; // Store P&L in satoshis for each trade
 String running_trades_ids[5]; // Store position IDs for closing
 float running_trades_entry[5]; // Store entry prices
 int running_trades_leverage[5]; // Store leverage for closing
@@ -1419,18 +1420,30 @@ void showPositionsScreen() {
       tft.print("Now: $");
       tft.print((int)btc_price);
       
-      // P&L %
-      float pnl = running_trades_pnl[i];
-      tft.setCursor(220, y_pos + 12);
-      if (pnl >= 0) {
+      // P&L en satoshis et %
+      long pnl_sats = running_trades_pnl_sats[i];
+      float pnl_percent = running_trades_pnl[i];
+      
+      tft.setCursor(200, y_pos + 12);
+      if (pnl_sats >= 0) {
         tft.setTextColor(COLOR_GREEN);
         tft.print("+");
       } else {
         tft.setTextColor(COLOR_RED);
         tft.print("");
       }
-      tft.print(pnl, 1);
-      tft.print(" PL%");
+      tft.print(pnl_sats);
+      tft.print("s ");
+      
+      if (pnl_percent >= 0) {
+        tft.setTextColor(COLOR_GREEN);
+        tft.print("+");
+      } else {
+        tft.setTextColor(COLOR_RED);
+        tft.print("");
+      }
+      tft.print(pnl_percent, 1);
+      tft.print("%");
       
       // Bouton CLOSE
       tft.fillRoundRect(20, y_pos + 25, 50, 20, 3, COLOR_RED);
@@ -1615,6 +1628,7 @@ void updateWalletData() {
   for (int i = 0; i < 5; i++) {
     running_trades_details[i] = "";
     running_trades_pnl[i] = 0.0;
+    running_trades_pnl_sats[i] = 0;
     running_trades_ids[i] = "";
     running_trades_entry[i] = 0.0;
     running_trades_leverage[i] = 0;
@@ -1647,8 +1661,8 @@ void updateWalletData() {
           String id = trade["id"].as<String>();
           String side = trade["side"].as<String>();
           int leverage = trade["leverage"].as<int>();
-          long pnl_sats = trade["pnl"].as<long>();
-          float entry_price = trade["entry_price"].as<float>();
+          long pnl_sats = trade["pl"].as<long>();
+          float entry_price = trade["entryPrice"].as<float>();
           
           // Calculate P&L % using pnl field
           float pnl_percent = 0.0;
@@ -1672,6 +1686,8 @@ void updateWalletData() {
           } else {
             running_trades_pnl[detailIndex] = pnl_calc;
           }
+          
+          running_trades_pnl_sats[detailIndex] = pnl_sats;
           
           String detail = side + " " + String(leverage) + "x " + String(trade_margin) + "s";
           running_trades_details[detailIndex] = detail;
