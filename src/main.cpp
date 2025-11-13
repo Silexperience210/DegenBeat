@@ -713,8 +713,8 @@ void updatePrice() {
       if (new_price != btc_price) {
         btc_price = new_price;
         
-        // Effacer ancienne valeur
-        tft.fillRect(10, 60, 180, 30, COLOR_BG);
+        // Effacer complètement la zone du prix (zone plus large pour être sûr)
+        tft.fillRect(8, 58, 185, 35, COLOR_BG);
         
         // Afficher nouvelle valeur
         tft.setTextColor(TFT_WHITE);
