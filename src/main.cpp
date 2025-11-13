@@ -564,37 +564,37 @@ void showMainScreen() {
   tft.setCursor(20, 50);
   tft.println("BITCOIN PRICE");
   
-  // Prix (sera mis à jour par updatePrice)
+  // Prix (aligné à gauche)
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(4);
-  tft.fillRect(20, 70, 280, 40, COLOR_BG); // Clear price area
-  tft.setCursor(20, 70);
+  tft.fillRect(10, 60, 180, 30, COLOR_BG); // Prix aligné à gauche
+  tft.setCursor(10, 60);
   tft.println("Loading...");
   
-  // Boutons LONG/SHORT
+  // Boutons SELL en haut à droite, BUY en dessous
   uint16_t longColor = (selected_side == "buy") ? TFT_YELLOW : COLOR_GREEN;
   uint16_t shortColor = (selected_side == "sell") ? TFT_YELLOW : COLOR_RED;
-  tft.fillRoundRect(20, 120, 120, 35, 8, longColor); // LONG
-  tft.fillRoundRect(180, 120, 120, 35, 8, shortColor);  // SHORT
+  tft.fillRoundRect(250, 55, 70, 30, 8, shortColor);  // SELL - haut droite
+  tft.fillRoundRect(250, 90, 70, 30, 8, longColor); // BUY - bas droite
   
   tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(3);
-  tft.setCursor(50, 130);
-  tft.println("LONG");
-  tft.setCursor(205, 130);
-  tft.println("SHORT");
+  tft.setTextSize(2);
+  tft.setCursor(268, 63);
+  tft.println("SELL");
+  tft.setCursor(268, 98);
+  tft.println("BUY");
   
   // Boutons Leverage
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(20, 170);
+  tft.setCursor(20, 130);
   tft.println("LEVERAGE:");
   
   // Boutons 25x, 50x, 75x, 100x
   int btnWidth = 50;
-  int btnHeight = 25;
+  int btnHeight = 20; // Réduit à 20px
   int startX = 20;
-  int startY = 185;
+  int startY = 140; // Remonté
   
   // 25x
   uint16_t color25 = (selected_leverage == 25) ? TFT_YELLOW : 0x39E7;
@@ -622,30 +622,58 @@ void showMainScreen() {
   tft.setCursor(startX + 185, startY + 5);
   tft.println("100x");
   
-  // Margin control
+  // Boutons montants rapides (100, 500, 1000, 5000 sats)
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(20, 220);
+  tft.setCursor(20, 165);
+  tft.println("QUICK AMOUNTS:");
+  
+  // 100 sats
+  tft.fillRoundRect(20, 175, 45, 15, 3, 0x39E7); // Réduit à 15px hauteur
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(25, 180);
+  tft.println("100");
+  
+  // 500 sats
+  tft.fillRoundRect(75, 175, 45, 15, 3, 0x39E7);
+  tft.setCursor(80, 180);
+  tft.println("500");
+  
+  // 1000 sats
+  tft.fillRoundRect(130, 175, 45, 15, 3, 0x39E7);
+  tft.setCursor(135, 180);
+  tft.println("1000");
+  
+  // 5000 sats
+  tft.fillRoundRect(185, 175, 45, 15, 3, 0x39E7);
+  tft.setCursor(190, 180);
+  tft.println("5000");
+
+  // Margin control (remonté)
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(20, 200);
   tft.print("MARGIN: ");
   tft.print(selected_margin);
   tft.println(" sats");
   
   // Boutons + et -
-  tft.fillRoundRect(180, 215, 30, 25, 3, 0x39E7);
+  tft.fillRoundRect(180, 195, 30, 20, 3, 0x39E7); // Réduit à 20px
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
-  tft.setCursor(190, 220);
+  tft.setCursor(190, 200);
   tft.println("-");
   
-  tft.fillRoundRect(220, 215, 30, 25, 3, 0x39E7);
-  tft.setCursor(230, 220);
+  tft.fillRoundRect(220, 195, 30, 20, 3, 0x39E7);
+  tft.setCursor(230, 200);
   tft.println("+");
   
-  // Bouton exécuter
-  tft.fillRoundRect(20, 240, 280, 25, 5, 0x39E7); // Bleu
+  // Bouton exécuter (remonté)
+  tft.fillRoundRect(20, 220, 280, 20, 5, 0x39E7); // Remonté à Y=220
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
-  tft.setCursor(100, 247);
+  tft.setCursor(100, 225); // Ajusté pour Y=220
   tft.println("EXECUTER");
   
   Serial.println("Écran principal affiché");
@@ -675,12 +703,12 @@ void updatePrice() {
         btc_price = new_price;
         
         // Effacer ancienne valeur
-        tft.fillRect(20, 70, 280, 40, COLOR_BG);
+        tft.fillRect(10, 60, 180, 30, COLOR_BG);
         
         // Afficher nouvelle valeur
         tft.setTextColor(TFT_WHITE);
         tft.setTextSize(4);
-        tft.setCursor(20, 70);
+        tft.setCursor(10, 60);
         tft.print("$");
         tft.println((int)btc_price);
         
@@ -977,20 +1005,20 @@ void handleTouch() {
   
   // Actions selon l'écran actuel
   if (current_screen == SCREEN_HOME) {
-    // Bouton LONG (20, 120, 120x35)
-    if (x >= 20 && x <= 140 && y >= 120 && y <= 155) {
-      selected_side = "buy";
-      Serial.println("⚡ LONG sélectionné!");
-      showMainScreen(); // Refresh to highlight
-    }
-    // Bouton SHORT (180, 120, 120x35)
-    else if (x >= 180 && x <= 300 && y >= 120 && y <= 155) {
+    // Bouton SELL (250, 55, 70x30) - haut droite
+    if (x >= 250 && x <= 320 && y >= 55 && y <= 85) {
       selected_side = "sell";
-      Serial.println("🔻 SHORT sélectionné!");
+      Serial.println("🔻 SELL sélectionné!");
       showMainScreen(); // Refresh to highlight
     }
-    // Boutons Leverage (20, 185, 50x25 chacun)
-    else if (y >= 185 && y <= 210) {
+    // Bouton BUY (250, 90, 70x30) - bas droite
+    else if (x >= 250 && x <= 320 && y >= 90 && y <= 120) {
+      selected_side = "buy";
+      Serial.println("⚡ BUY sélectionné!");
+      showMainScreen(); // Refresh to highlight
+    }
+    // Boutons Leverage (20, 140, 50x20 chacun)
+    else if (y >= 140 && y <= 160) {
       if (x >= 20 && x <= 70) {
         selected_leverage = 25;
         Serial.println("Leverage: 25x");
@@ -1009,22 +1037,42 @@ void handleTouch() {
         showMainScreen(); // Refresh display
       }
     }
-    // Boutons Margin + (220, 215, 30x25)
-    else if (x >= 220 && x <= 250 && y >= 215 && y <= 240) {
+    // Boutons montants rapides (100, 500, 1000, 5000 sats) - Y=175-190
+    else if (y >= 175 && y <= 190) {
+      if (x >= 20 && x <= 65) {
+        selected_margin = 100;
+        Serial.println("Margin: 100 sats");
+        showMainScreen();
+      } else if (x >= 75 && x <= 120) {
+        selected_margin = 500;
+        Serial.println("Margin: 500 sats");
+        showMainScreen();
+      } else if (x >= 130 && x <= 175) {
+        selected_margin = 1000;
+        Serial.println("Margin: 1000 sats");
+        showMainScreen();
+      } else if (x >= 185 && x <= 230) {
+        selected_margin = 5000;
+        Serial.println("Margin: 5000 sats");
+        showMainScreen();
+      }
+    }
+    // Boutons Margin + (220, 195, 30x20) - ajustés
+    else if (x >= 220 && x <= 250 && y >= 195 && y <= 215) {
       selected_margin += 100;
       if (selected_margin > 10000) selected_margin = 10000; // Max 10000 sats
       Serial.println("Margin: " + String(selected_margin));
       showMainScreen(); // Refresh display
     }
-    // Boutons Margin - (180, 215, 30x25)
-    else if (x >= 180 && x <= 210 && y >= 215 && y <= 240) {
+    // Boutons Margin - (180, 195, 30x20) - ajustés
+    else if (x >= 180 && x <= 210 && y >= 195 && y <= 215) {
       selected_margin -= 100;
       if (selected_margin < 100) selected_margin = 100; // Min 100 sats
       Serial.println("Margin: " + String(selected_margin));
       showMainScreen(); // Refresh display
     }
-    // Bouton EXECUTER (20, 240, 280x25)
-    else if (x >= 20 && x <= 300 && y >= 240 && y <= 265) {
+    // Bouton EXECUTER (20, 220, 280x20) - remonté
+    else if (x >= 20 && x <= 300 && y >= 220 && y <= 240) {
       if (selected_side != "") {
         Serial.println("🚀 EXECUTER TRADE!");
         executeTrade(selected_side, selected_margin);
@@ -1324,7 +1372,7 @@ void showPositionsScreen() {
         tft.print("");
       }
       tft.print(pnl, 1);
-      tft.print("%");
+      tft.print(" PL%");
       
       // Bouton CLOSE
       tft.fillRoundRect(20, y_pos + 25, 50, 20, 3, COLOR_RED);
