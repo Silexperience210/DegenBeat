@@ -572,10 +572,21 @@ void showMainScreen() {
   tft.println("Loading...");
   
   // Boutons SELL en haut à droite, BUY en dessous
-  uint16_t longColor = (selected_side == "buy") ? TFT_YELLOW : COLOR_GREEN;
-  uint16_t shortColor = (selected_side == "sell") ? TFT_YELLOW : COLOR_RED;
-  tft.fillRoundRect(250, 55, 70, 30, 8, shortColor);  // SELL - haut droite
-  tft.fillRoundRect(250, 90, 70, 30, 8, longColor); // BUY - bas droite
+  uint16_t sellColor, buyColor;
+  
+  if (selected_side == "sell") {
+    sellColor = COLOR_RED;        // SELL sélectionné : couleur normale
+    buyColor = 0x39E7;           // BUY obscurci : gris foncé
+  } else if (selected_side == "buy") {
+    sellColor = 0x39E7;          // SELL obscurci : gris foncé
+    buyColor = COLOR_GREEN;      // BUY sélectionné : couleur normale
+  } else {
+    sellColor = COLOR_RED;       // Aucun sélectionné : couleurs normales
+    buyColor = COLOR_GREEN;
+  }
+  
+  tft.fillRoundRect(250, 55, 70, 30, 8, sellColor);  // SELL - haut droite
+  tft.fillRoundRect(250, 90, 70, 30, 8, buyColor); // BUY - bas droite
   
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
