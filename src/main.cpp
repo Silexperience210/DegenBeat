@@ -18,6 +18,7 @@
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include <mbedtls/md.h>
+#include <mbedtls/aes.h>
 #include <base64.h>
 #include <time.h>
 #include <PNGdec.h>
@@ -189,9 +190,14 @@ void showDepositManagementScreen();
 void getDepositHistory();
 void showDepositHistoryScreen();
 
-// LED RGB functions
+// ===== PROTOTYPES FONCTIONS DE SÉCURITÉ =====
+void deriveEncryptionKey(uint8_t* key, const char* password, size_t pass_len);
+bool validateLightningAddress(String address);
+bool validateApiKey(String key);
+bool validateAmount(long amount, long min_val = 100, long max_val = 100000);
 void updateLedPnl();
 void setLedRGB(int red, int green, int blue);
+size_t base64Decode(const char* input, size_t inputLen, uint8_t* output, size_t outputMaxLen);
 
 // =====================================================
 // TÂCHE FREERTOS POUR MISES À JOUR PRIX (CORE 1)
@@ -221,6 +227,285 @@ void priceUpdateTask(void *pvParameters) {
     // Attendre 2 secondes pour une mise à jour plus fluide
     vTaskDelay(pdMS_TO_TICKS(2000));
   }
+}
+
+// =====================================================
+// SECURITY FUNCTIONS - PHASE 1
+// =====================================================
+
+// Derive encryption key from WiFi password using SHA-256
+void deriveEncryptionKey(uint8_t* key, size_t keySize) {
+  if (password_saved.length() == 0) {
+    Serial.println("ERREUR: Pas de mot de passe WiFi pour dérivation de clé");
+    memset(key, 0, keySize);
+    return;
+  }
+
+  Serial.println("🔐 Dérivation de clé de chiffrement...");
+
+  // Utiliser SHA-256 pour dériver une clé
+  mbedtls_md_context_t ctx;
+  mbedtls_md_type_t md_type = MBEDTLS_MD_SHA256;
+  uint8_t hash[32]; // Buffer temporaire pour le hash complet
+
+  mbedtls_md_init(&ctx);
+  mbedtls_md_setup(&ctx, mbedtls_md_info_from_type(md_type), 0); // Pas de HMAC
+  mbedtls_md_starts(&ctx);
+  mbedtls_md_update(&ctx, (const unsigned char*)password_saved.c_str(), password_saved.length());
+  mbedtls_md_finish(&ctx, hash);
+  mbedtls_md_free(&ctx);
+
+  // Copier seulement keySize octets (16 pour XOR, 32 pour AES)
+  memcpy(key, hash, keySize);
+
+  Serial.println("✅ Clé de chiffrement dérivée");
+}
+
+// =====================================================
+// CHIFFREMENT XOR ULTRA-LÉGER (Solution 2)
+// =====================================================
+
+// Clé XOR dérivée du mot de passe WiFi (16 bytes)
+const uint8_t XOR_KEY[16] = {
+  0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+  0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c
+};
+
+String xorEncrypt(String data) {
+  // Utiliser une clé dérivée du mot de passe WiFi pour plus de sécurité
+  uint8_t key[16];
+  deriveEncryptionKey(key, sizeof(key));
+  
+  String result = "";
+  for (size_t i = 0; i < data.length(); i++) {
+    uint8_t encrypted = data[i] ^ key[i % 16];
+    char hex[3];
+    sprintf(hex, "%02X", encrypted);
+    result += hex;
+  }
+  return result;
+}
+
+String xorDecrypt(String data) {
+  // Utiliser la même clé dérivée pour le déchiffrement
+  uint8_t key[16];
+  deriveEncryptionKey(key, sizeof(key));
+  
+  String result = "";
+  for (size_t i = 0; i < data.length(); i += 2) {
+    String hexByte = data.substring(i, i + 2);
+    uint8_t byte = strtol(hexByte.c_str(), NULL, 16);
+    uint8_t decrypted = byte ^ key[(i / 2) % 16];
+    result += (char)decrypted;
+  }
+  return result;
+}
+String encryptData(const char* plaintext, size_t plaintextLen) {
+  // Utiliser des buffers statiques pour éviter les allocations dynamiques
+  static uint8_t paddedPlaintext[512]; // Buffer statique de 512 octets max
+  static uint8_t encrypted[512];       // Buffer statique de 512 octets max
+
+  // Vérifier que les données ne dépassent pas la taille maximale
+  if (plaintextLen > 400) { // Laisser de la marge pour le padding
+    Serial.println("ERREUR: Données trop longues pour chiffrement");
+    return "";
+  }
+
+  uint8_t key[32];
+  deriveEncryptionKey(key, sizeof(key));
+
+  // IV fixe pour simplicité
+  uint8_t iv[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+
+  int ret = mbedtls_aes_setkey_enc(&aes, key, 256);
+  if (ret != 0) {
+    Serial.println("ERREUR: Échec configuration clé AES");
+    mbedtls_aes_free(&aes);
+    return "";
+  }
+
+  // Chiffrement AES en mode CBC avec buffers statiques
+  size_t paddedLen = ((plaintextLen + 15) / 16) * 16; // Padding PKCS7
+
+  // Préparer les données avec padding
+  memset(paddedPlaintext, 0, sizeof(paddedPlaintext)); // Nettoyer le buffer
+  memcpy(paddedPlaintext, plaintext, plaintextLen);
+  // Ajouter padding PKCS7
+  uint8_t padding = 16 - (plaintextLen % 16);
+  memset(paddedPlaintext + plaintextLen, padding, padding);
+
+  memset(encrypted, 0, sizeof(encrypted)); // Nettoyer le buffer
+  ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, paddedLen, iv, paddedPlaintext, encrypted);
+  if (ret != 0) {
+    Serial.println("ERREUR: Échec chiffrement AES");
+    mbedtls_aes_free(&aes);
+    return "";
+  }
+
+  // Encoder en base64 (utiliser un buffer statique aussi)
+  String base64Result = base64::encode(encrypted, paddedLen);
+
+  mbedtls_aes_free(&aes);
+
+  Serial.println("✅ Données chiffrées (optimisé)");
+  return base64Result;
+}
+
+// Decrypt data using AES-256 (version optimisée pour ESP32)
+String decryptData(const char* ciphertext, size_t ciphertextLen) {
+  // Utiliser des buffers statiques pour éviter les allocations dynamiques
+  static uint8_t encrypted[512];  // Buffer pour les données décodées base64
+  static uint8_t decrypted[512];  // Buffer pour les données déchiffrées
+
+  uint8_t key[32];
+  deriveEncryptionKey(key, sizeof(key));
+
+  // IV fixe pour simplicité
+  uint8_t iv[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                    0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
+
+  // Décoder depuis base64 (utiliser buffer statique)
+  memset(encrypted, 0, sizeof(encrypted));
+  size_t encryptedLen = base64Decode(ciphertext, ciphertextLen, encrypted, sizeof(encrypted));
+  if (encryptedLen == 0 || encryptedLen % 16 != 0) {
+    Serial.println("ERREUR: Échec décodage base64 ou longueur invalide");
+    return "";
+  }
+
+  if (encryptedLen > 400) { // Vérifier la taille maximale
+    Serial.println("ERREUR: Données déchiffrées trop longues");
+    return "";
+  }
+
+  mbedtls_aes_context aes;
+  mbedtls_aes_init(&aes);
+
+  int aes_ret = mbedtls_aes_setkey_dec(&aes, key, 256);
+  if (aes_ret != 0) {
+    Serial.println("ERREUR: Échec configuration clé AES déchiffrement");
+    mbedtls_aes_free(&aes);
+    return "";
+  }
+
+  memset(decrypted, 0, sizeof(decrypted));
+  aes_ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, encryptedLen, iv, encrypted, decrypted);
+  if (aes_ret != 0) {
+    Serial.println("ERREUR: Échec déchiffrement AES");
+    mbedtls_aes_free(&aes);
+    return "";
+  }
+
+  // Supprimer padding PKCS7
+  uint8_t padding = decrypted[encryptedLen - 1];
+  if (padding > 16 || padding == 0) {
+    Serial.println("ERREUR: Padding invalide");
+    mbedtls_aes_free(&aes);
+    return "";
+  }
+
+  // Vérifier que tout le padding est correct
+  for (size_t i = encryptedLen - padding; i < encryptedLen; i++) {
+    if (decrypted[i] != padding) {
+      Serial.println("ERREUR: Padding corrompu");
+      mbedtls_aes_free(&aes);
+      return "";
+    }
+  }
+
+  size_t actualLen = encryptedLen - padding;
+  String result = String((char*)decrypted, actualLen);
+
+  mbedtls_aes_free(&aes);
+
+  Serial.println("✅ Données déchiffrées (optimisé)");
+  return result;
+}
+
+// Validate Lightning address format
+bool validateLightningAddress(String address) {
+  if (address.length() == 0) return true; // Optionnel
+
+  // Format: user@domain.com
+  int atIndex = address.indexOf('@');
+  if (atIndex <= 0 || atIndex >= address.length() - 1) {
+    Serial.println("❌ Format Lightning Address invalide: pas de @");
+    return false;
+  }
+
+  String user = address.substring(0, atIndex);
+  String domain = address.substring(atIndex + 1);
+
+  // Vérifier user (lettres, chiffres, points, tirets, underscores)
+  for (char c : user) {
+    if (!isalnum(c) && c != '.' && c != '-' && c != '_') {
+      Serial.println("❌ Caractère invalide dans user: " + String(c));
+      return false;
+    }
+  }
+
+  // Vérifier domain (format email basique)
+  if (domain.indexOf('.') == -1) {
+    Serial.println("❌ Domain invalide: pas de point");
+    return false;
+  }
+
+  Serial.println("✅ Lightning Address valide: " + address);
+  return true;
+}
+
+// Validate API key format
+bool validateApiKey(String key) {
+  if (key.length() == 0 || key == "public") return true; // Optionnel
+
+  // Format LN Markets: chaîne base64 d'au moins 20 caractères
+  if (key.length() < 20) {
+    Serial.println("❌ API Key trop courte (min 20 caractères)");
+    return false;
+  }
+
+  // Vérifier que c'est une chaîne base64 valide (caractères alphanumériques + / + =)
+  for (char c : key) {
+    if (!isalnum(c) && c != '/' && c != '+' && c != '=') {
+      Serial.println("❌ API Key contient des caractères invalides");
+      return false;
+    }
+  }
+
+  Serial.println("✅ API Key valide");
+  return true;
+}
+
+// Fonction de décodage base64 simple pour ESP32
+size_t base64Decode(const char* input, size_t inputLen, uint8_t* output, size_t outputMaxLen) {
+  // Table de décodage base64
+  static const char base64_chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  
+  size_t outputLen = 0;
+  int bits = 0;
+  int bits_count = 0;
+  
+  for (size_t i = 0; i < inputLen && outputLen < outputMaxLen; ++i) {
+    char c = input[i];
+    if (c == '=') break; // Fin du padding
+    
+    const char* pos = strchr(base64_chars, c);
+    if (!pos) continue; // Caractère invalide, ignorer
+    
+    int val = pos - base64_chars;
+    bits = (bits << 6) | val;
+    bits_count += 6;
+    
+    if (bits_count >= 8) {
+      output[outputLen++] = (bits >> (bits_count - 8)) & 0xFF;
+      bits_count -= 8;
+    }
+  }
+  
+  return outputLen;
 }
 
 // =====================================================
@@ -368,9 +653,101 @@ void loadConfig() {
   
   ssid_saved = doc["ssid"].as<String>();
   password_saved = doc["password"].as<String>();
-  api_key = doc["api_key"].as<String>();
-  api_secret = doc["api_secret"].as<String>();
-  api_passphrase = doc["api_passphrase"].as<String>();
+  
+  // Charger et déchiffrer les clés API
+  String encrypted_api_key = doc["api_key"].as<String>();
+  String encrypted_api_secret = doc["api_secret"].as<String>();
+  String encrypted_api_passphrase = doc["api_passphrase"].as<String>();
+  
+  // Si les clés sont chiffrées (commencent par "XOR:"), les déchiffrer
+  if (encrypted_api_key.startsWith("XOR:")) {
+    Serial.println("🔓 Déchiffrement XOR des clés API...");
+    String encrypted_data = encrypted_api_key.substring(4); // Enlever "XOR:"
+    String decrypted = xorDecrypt(encrypted_data);
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_key = decrypted;
+      Serial.println("✅ Clé API XOR validée");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation XOR API key - utilisation mode public");
+      api_key = "public";
+    }
+  } else if (encrypted_api_key.startsWith("ENC:")) {
+    // Support legacy AES encryption
+    Serial.println("🔓 Déchiffrement AES legacy des clés API...");
+    String encrypted_data = encrypted_api_key.substring(4);
+    String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_key = decrypted;
+      Serial.println("✅ Clé API AES legacy validée");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation AES legacy API key - utilisation mode public");
+      api_key = "public";
+    }
+  } else {
+    // Clé non chiffrée (ancienne config ou mode public)
+    if (encrypted_api_key != "" && encrypted_api_key != "public" && validateApiKey(encrypted_api_key)) {
+      api_key = encrypted_api_key;
+    } else {
+      api_key = "public";
+    }
+  }
+  
+  if (encrypted_api_secret.startsWith("XOR:")) {
+    String encrypted_data = encrypted_api_secret.substring(4);
+    String decrypted = xorDecrypt(encrypted_data);
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_secret = decrypted;
+      Serial.println("✅ Secret API XOR validé");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation XOR API secret - utilisation mode public");
+      api_secret = "public";
+    }
+  } else if (encrypted_api_secret.startsWith("ENC:")) {
+    String encrypted_data = encrypted_api_secret.substring(4);
+    String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_secret = decrypted;
+      Serial.println("✅ Secret API AES legacy validé");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation AES legacy API secret - utilisation mode public");
+      api_secret = "public";
+    }
+  } else {
+    if (encrypted_api_secret != "" && encrypted_api_secret != "public" && validateApiKey(encrypted_api_secret)) {
+      api_secret = encrypted_api_secret;
+    } else {
+      api_secret = "public";
+    }
+  }
+  
+  if (encrypted_api_passphrase.startsWith("XOR:")) {
+    String encrypted_data = encrypted_api_passphrase.substring(4);
+    String decrypted = xorDecrypt(encrypted_data);
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_passphrase = decrypted;
+      Serial.println("✅ Passphrase API XOR validée");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation XOR API passphrase - utilisation mode public");
+      api_passphrase = "public";
+    }
+  } else if (encrypted_api_passphrase.startsWith("ENC:")) {
+    String encrypted_data = encrypted_api_passphrase.substring(4);
+    String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
+    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+      api_passphrase = decrypted;
+      Serial.println("✅ Passphrase API AES legacy validée");
+    } else {
+      Serial.println("❌ Échec déchiffrement/validation AES legacy API passphrase - utilisation mode public");
+      api_passphrase = "public";
+    }
+  } else {
+    if (encrypted_api_passphrase != "" && encrypted_api_passphrase != "public" && validateApiKey(encrypted_api_passphrase)) {
+      api_passphrase = encrypted_api_passphrase;
+    } else {
+      api_passphrase = "public";
+    }
+  }
+  
   lightning_address = doc["lightning_address"].as<String>();
   deposit_lnaddress = doc["deposit_lnaddress"].as<String>();
   
@@ -388,9 +765,47 @@ void saveConfig() {
   JsonDocument doc;
   doc["ssid"] = ssid_saved;
   doc["password"] = password_saved;
-  doc["api_key"] = api_key;
-  doc["api_secret"] = api_secret;
-  doc["api_passphrase"] = api_passphrase;
+  
+  // Chiffrer les clés API avant sauvegarde
+  if (api_key != "" && api_key != "public") {
+    Serial.println("🔐 Chiffrement XOR API key...");
+    String encrypted = xorEncrypt(api_key);
+    if (encrypted != "") {
+      doc["api_key"] = String("XOR:") + encrypted;
+    } else {
+      Serial.println("❌ Échec chiffrement XOR API key");
+      doc["api_key"] = "public";
+    }
+  } else {
+    doc["api_key"] = api_key;
+  }
+  
+  if (api_secret != "" && api_secret != "public") {
+    Serial.println("🔐 Chiffrement XOR API secret...");
+    String encrypted = xorEncrypt(api_secret);
+    if (encrypted != "") {
+      doc["api_secret"] = String("XOR:") + encrypted;
+    } else {
+      Serial.println("❌ Échec chiffrement XOR API secret");
+      doc["api_secret"] = "public";
+    }
+  } else {
+    doc["api_secret"] = api_secret;
+  }
+  
+  if (api_passphrase != "" && api_passphrase != "public") {
+    Serial.println("🔐 Chiffrement XOR API passphrase...");
+    String encrypted = xorEncrypt(api_passphrase);
+    if (encrypted != "") {
+      doc["api_passphrase"] = String("XOR:") + encrypted;
+    } else {
+      Serial.println("❌ Échec chiffrement XOR API passphrase");
+      doc["api_passphrase"] = "public";
+    }
+  } else {
+    doc["api_passphrase"] = api_passphrase;
+  }
+  
   doc["lightning_address"] = lightning_address;
   doc["deposit_lnaddress"] = deposit_lnaddress;
   
@@ -451,6 +866,12 @@ void startConfigPortal() {
   // Routes web
   server.on("/", handleRoot);
   server.on("/save", handleSave);
+  server.on("/favicon.ico", []() { server.send(204); }); // No content
+  server.on("/generate_204", []() { server.send(204); }); // Android captive portal
+  server.on("/hotspot-detect.html", []() { server.send(204); }); // iOS captive portal
+  server.on("/connecttest.txt", []() { server.send(200, "text/plain", "Microsoft Connect Test"); }); // Windows captive portal
+  server.onNotFound([]() { server.sendHeader("Location", "/", true); server.send(302, "text/plain", ""); }); // Redirect all other requests to root
+  
   server.begin();
   
   Serial.println("Serveur web démarré");
@@ -542,7 +963,7 @@ void handleRoot() {
       <input type='password' name='password' placeholder='Mot de passe' required>
       
       <label>LN Markets API Key</label>
-      <input type='text' name='api_key' placeholder='lnm_xxx (optionnel)'>
+      <input type='text' name='api_key' placeholder='Clé API base64 (optionnel)'>
       
       <label>LN Markets API Secret</label>
       <input type='password' name='api_secret' placeholder='Secret (optionnel)'>
@@ -576,13 +997,85 @@ void handleRoot() {
 }
 
 void handleSave() {
-  ssid_saved = server.arg("ssid");
-  password_saved = server.arg("password");
-  api_key = server.arg("api_key");
-  api_secret = server.arg("api_secret");
-  api_passphrase = server.arg("api_passphrase");
-  lightning_address = server.arg("lightning_address");
-  deposit_lnaddress = server.arg("deposit_lnaddress");
+  String raw_ssid = server.arg("ssid");
+  String raw_password = server.arg("password");
+  String raw_api_key = server.arg("api_key");
+  String raw_api_secret = server.arg("api_secret");
+  String raw_api_passphrase = server.arg("api_passphrase");
+  String raw_lightning_address = server.arg("lightning_address");
+  String raw_deposit_lnaddress = server.arg("deposit_lnaddress");
+  
+  // Validation des entrées
+  String validationError = "";
+  
+  // Valider les clés API si elles sont fournies (validation AVANT chiffrement)
+  if (raw_api_key != "" && raw_api_key != "public") {
+    if (!validateApiKey(raw_api_key)) {
+      validationError = "Clé API invalide (format base64 attendu)";
+    }
+  }
+  
+  if (raw_api_secret != "" && raw_api_secret != "public") {
+    if (!validateApiKey(raw_api_secret)) {
+      validationError = "Secret API invalide (format base64 attendu)";
+    }
+  }
+  
+  // Valider les adresses Lightning si elles sont fournies
+  if (raw_lightning_address != "") {
+    if (!validateLightningAddress(raw_lightning_address)) {
+      validationError = "Adresse Lightning invalide (format: user@domain.com)";
+    }
+  }
+  
+  if (raw_deposit_lnaddress != "") {
+    if (!validateLightningAddress(raw_deposit_lnaddress)) {
+      validationError = "Adresse de dépôt invalide (format: user@domain.com)";
+    }
+  }
+  
+  // Si erreur de validation, retourner une page d'erreur
+  if (validationError != "") {
+    Serial.println("❌ Erreur de validation: " + validationError);
+    
+    String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='refresh' content='5;url=/'>
+  <style>
+    body {
+      font-family: Arial;
+      background: #0a0a0a;
+      color: #ff0040;
+      text-align: center;
+      padding: 50px;
+    }
+    h1 { font-size: 48px; margin-bottom: 20px; }
+    p { font-size: 18px; }
+  </style>
+</head>
+<body>
+  <h1>❌ ERREUR DE VALIDATION</h1>
+  <p>)rawliteral" + validationError + R"rawliteral(</p>
+  <p>Retour automatique dans 5s...</p>
+</body>
+</html>
+  )rawliteral";
+    
+    server.send(400, "text/html", html);
+    return;
+  }
+  
+  // Assigner les valeurs validées aux variables globales
+  ssid_saved = raw_ssid;
+  password_saved = raw_password;
+  api_key = raw_api_key;
+  api_secret = raw_api_secret;
+  api_passphrase = raw_api_passphrase;
+  lightning_address = raw_lightning_address;
+  deposit_lnaddress = raw_deposit_lnaddress;
   
   // Si pas de clés API, utiliser mode public
   if (api_key == "") api_key = "public";
@@ -995,27 +1488,6 @@ void showError(String msg) {
 // =====================================================
 // AUTHENTIFICATION API LN MARKETS
 // =====================================================
-
-// Fonction pour décoder base64
-std::vector<uint8_t> base64Decode(String input) {
-  const char* base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  std::vector<uint8_t> output;
-  
-  int val = 0, valb = -8;
-  for (unsigned char c : input) {
-    if (c == '=') break;
-    const char* pos = strchr(base64_chars, c);
-    if (!pos) continue;
-    
-    val = (val << 6) + (pos - base64_chars);
-    valb += 6;
-    if (valb >= 0) {
-      output.push_back((val >> valb) & 0xFF);
-      valb -= 8;
-    }
-  }
-  return output;
-}
 
 String generateSignature(String method, String path, String data, String timestamp) {
   // Format du payload : timestamp + method + path + data
