@@ -1280,7 +1280,7 @@ void handleTouch() {
     }
   }
   else if (current_screen == SCREEN_WALLET) {
-  // Boutons montants rapides (100, 500, 1000, 2000 sats) - Y=205-220
+    // Boutons montants rapides (100, 500, 1000, 2000 sats) - Y=205-220
     if (y >= 205 && y <= 220) {
       if (x >= 20 && x <= 65) {
         withdraw_amount_sats = 100;
@@ -1332,7 +1332,24 @@ void handleTouch() {
         showWalletScreen(); // Refresh display
       }
     }
-    // Bouton Reset Config (position ajustée)
+    
+    // Boutons sur le bord droit - vérifiés indépendamment
+    // Bouton Withdraw (bord droit, en haut)
+    if (x >= 250 && x <= 315 && y >= 50 && y <= 75) {
+      Serial.println("💰 WITHDRAW pressed");
+      withdrawBalance();
+    }
+    // Bouton Deposit (bord droit, en dessous)
+    else if (x >= 250 && x <= 315 && y >= 85 && y <= 110) {
+      Serial.println("📥 DEPOSIT pressed");
+      showDepositManagementScreen();
+    }
+    // Bouton Deposit History (bord droit, en dessous)
+    else if (x >= 250 && x <= 315 && y >= 120 && y <= 145) {
+      Serial.println("📋 DEPOSIT HISTORY pressed");
+      getDepositHistory();
+    }
+    // Bouton Reset Config (bord droit, en bas)
     else if (x >= 250 && x <= 315 && y >= 210 && y <= 235) {
       Serial.println("🔄 RESET CONFIG!");
       tft.fillScreen(COLOR_BG);
@@ -1353,24 +1370,6 @@ void handleTouch() {
       SPIFFS.remove("/config.json");
       delay(2000);
       ESP.restart();
-    }
-    
-    // Bouton Withdraw (bord droit, en haut)
-    if (x >= 250 && x <= 315 && y >= 50 && y <= 75) {
-      Serial.println("💰 WITHDRAW pressed");
-      withdrawBalance();
-    }
-    
-    // Bouton Deposit (bord droit, en dessous)
-    if (x >= 250 && x <= 315 && y >= 85 && y <= 110) {
-      Serial.println("📥 DEPOSIT pressed");
-      showDepositManagementScreen();
-    }
-    
-    // Bouton Deposit History (bord droit, en dessous)
-    if (x >= 250 && x <= 315 && y >= 120 && y <= 145) {
-      Serial.println("📋 DEPOSIT HISTORY pressed");
-      getDepositHistory();
     }
   }
   else if (current_screen == SCREEN_POSITIONS) {
