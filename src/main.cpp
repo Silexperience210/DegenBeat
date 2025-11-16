@@ -1333,13 +1333,22 @@ void handleTouch() {
       }
     }
     // Bouton Reset Config (position ajustée)
-    else if (x >= 180 && x <= 300 && y >= 195 && y <= 220) {
+    else if (x >= 250 && x <= 315 && y >= 210 && y <= 235) {
       Serial.println("🔄 RESET CONFIG!");
       tft.fillScreen(COLOR_BG);
       tft.setTextColor(COLOR_RED);
       tft.setTextSize(2);
       tft.setCursor(40, 100);
       tft.println("RESET CONFIG...");
+      
+      // Reset toutes les variables aux valeurs par défaut
+      ssid_saved = "";
+      password_saved = "";
+      api_key = "public";
+      api_secret = "public";
+      api_passphrase = "public";
+      lightning_address = "";
+      deposit_lnaddress = "";
       
       SPIFFS.remove("/config.json");
       delay(2000);
