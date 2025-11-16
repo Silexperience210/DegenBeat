@@ -11,6 +11,7 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <SPIFFS.h>
@@ -45,6 +46,7 @@
 TFT_eSPI tft = TFT_eSPI();
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 WebServer server(80);
+DNSServer dnsServer;
 
 // Objet PNG global pour la callback
 PNG pngGlobal;
@@ -315,6 +317,7 @@ void setup() {
 // =====================================================
 void loop() {
   if (config_mode) {
+    dnsServer.processNextRequest();
     server.handleClient();
     return;
   }
@@ -442,12 +445,16 @@ void startConfigPortal() {
   Serial.print("  IP: ");
   Serial.println(IP);
   
+  // DNS captif (redirige tout vers l'ESP32)
+  dnsServer.start(53, "*", WiFi.softAPIP());
+  
   // Routes web
   server.on("/", handleRoot);
   server.on("/save", handleSave);
   server.begin();
   
   Serial.println("Serveur web démarré");
+  Serial.println("✅ Portail captif actif");
 }
 
 void handleRoot() {
@@ -2374,16 +2381,44 @@ void closeTrade(String positionId) {
 void updateLedPnl() {
   // Priorité au mode configuration
   if (config_mode) {
-    // LED bleu foncé pulsant lentement en mode config
-    if (millis() - last_config_led_blink > config_blink_speed) {
-      config_led_blink_state = !config_led_blink_state;
-      last_config_led_blink = millis();
-      
-      if (config_led_blink_state) {
-        setLedRGB(0, 0, 1); // Bleu foncé (seulement bleu)
-      } else {
-        setLedRGB(0, 0, 0); // Éteint
-      }
+    // LED pulsant en mode "heartbeat" (cœur qui bat) - effet plus visible
+    static unsigned long last_beat = 0;
+    static int beat_phase = 0; // 0: repos, 1: battement rapide, 2: pause
+    
+    unsigned long now = millis();
+    
+    switch (beat_phase) {
+      case 0: // Repos (LED éteinte)
+        if (now - last_beat > 1500) { // 1.5s de repos
+          last_beat = now;
+          beat_phase = 1;
+          setLedRGB(1, 0, 1); // Magenta allumé
+        }
+        break;
+        
+      case 1: // Battement rapide (double pulsation)
+        if (now - last_beat > 150) { // 150ms allumé
+          last_beat = now;
+          beat_phase = 2;
+          setLedRGB(0, 0, 0); // Éteint
+        }
+        break;
+        
+      case 2: // Pause courte
+        if (now - last_beat > 100) { // 100ms éteint
+          last_beat = now;
+          beat_phase = 3;
+          setLedRGB(1, 0, 1); // Magenta allumé (2ème pulsation)
+        }
+        break;
+        
+      case 3: // 2ème battement
+        if (now - last_beat > 150) { // 150ms allumé
+          last_beat = now;
+          beat_phase = 0; // Retour au repos
+          setLedRGB(0, 0, 0); // Éteint
+        }
+        break;
     }
     return; // Ne pas exécuter le code P&L en mode config
   }
