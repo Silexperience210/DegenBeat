@@ -19,6 +19,8 @@
 #include <mbedtls/md.h>
 #include <base64.h>
 #include <time.h>
+#include <PNGdec.h>
+#include <qrcode.h>
 
 // ===== PINS SUNTON ESP32-2432S028R =====
 #define TFT_BL 21
@@ -27,6 +29,12 @@
 #define TOUCH_MOSI 32
 #define TOUCH_MISO 39
 #define TOUCH_CLK 25
+
+// Carte SD (utilise HSPI)
+#define SD_CS 15
+#define SD_MOSI 13  // TFT_MOSI
+#define SD_MISO 12  // TFT_MISO
+#define SD_CLK 14   // TFT_SCLK
 
 // LED RGB intégrée
 #define LED_RED 4
@@ -37,6 +45,9 @@
 TFT_eSPI tft = TFT_eSPI();
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 WebServer server(80);
+
+// Objet PNG global pour la callback
+PNG pngGlobal;
 
 // ===== VARIABLES =====
 String ssid_saved = "";
@@ -61,6 +72,18 @@ Screen current_screen = SCREEN_HOME;
 // Wallet data
 long balance_sats = 0;
 float balance_usd = 0.0;
+
+// Withdraw amount selection
+long withdraw_amount_sats = 1000; // Default 1000 sats
+
+// Deposit amount selection
+long deposit_amount_sats = 1000; // Default 1000 sats
+
+// Lightning address for withdrawals (LNURL)
+String lightning_address = ""; // Default empty - user must configure
+
+// Lightning address for deposits (LNURL)
+String deposit_lnaddress = ""; // Default empty - user must configure
 
 // Trade settings
 int selected_leverage = 25; // Default leverage
@@ -89,16 +112,49 @@ String closed_trades_details[10]; // Store up to 10 closed trade details
 float closed_trades_pnl[10]; // Store P&L for each closed trade
 String closed_trades_dates[10]; // Store close dates
 
+// Lightning deposits history data
+int lightning_deposits_count = 0;
+String lightning_deposits_details[10]; // Store up to 10 deposit details
+long lightning_deposits_amounts[10]; // Store amounts in sats
+String lightning_deposits_dates[10]; // Store deposit dates
+String lightning_deposits_hashes[10]; // Store payment hashes
+String lightning_deposits_comments[10]; // Store comments
+
 // ===== VARIABLES LED RGB =====
 bool led_blink_state = false;
 unsigned long last_led_blink = 0;
 int blink_speed = 500; // Vitesse de clignotement en ms
 
+// Variables pour LED configuration
+bool config_led_blink_state = false;
+unsigned long last_config_led_blink = 0;
+int config_blink_speed = 800; // Vitesse plus lente pour config
+
+// ===== CACHE WALLET =====
+unsigned long last_wallet_update = 0;
+const unsigned long WALLET_CACHE_DURATION = 10000; // 10 secondes de cache
+
+// ===== VARIABLES QR CODE =====
+int globalQrX = 80; // Position X par défaut du QR
+int globalQrY = 50; // Position Y par défaut du QR
+
 // ===== COULEURS =====
-#define COLOR_BG 0x0000
+#define COLOR_BG 0x0010  // Bleu très foncé (thème sombre)
 #define COLOR_RED 0xF800
 #define COLOR_CYAN 0x07FF
 #define COLOR_GREEN 0x07E0
+
+// =====================================================
+// FONCTION FADE OUT POUR TRANSITIONS
+// =====================================================
+void fadeOut(int duration = 150) {
+  int steps = 10;
+  for(int i = 0; i < steps; i++) {
+    // Dessiner des bandes noires verticales progressives
+    tft.fillRect(0, i * 240 / steps, 320, 240 / steps, TFT_BLACK);
+    delay(duration / steps);
+  }
+}
 
 // ===== PROTOTYPES FONCTIONS =====
 void loadConfig();
@@ -120,9 +176,16 @@ void showHistoryScreen();
 void updateWalletData();
 void executeTrade(String side, int margin);
 void handleTouch();
+void withdrawBalance();
 void syncTime();
 void closeTrade(String positionId);
 void cancelOrder(String orderId);
+void getDepositAddress();
+void showDepositQRScreen(String address);
+void showDepositTextScreen(String address);
+void showDepositManagementScreen();
+void getDepositHistory();
+void showDepositHistoryScreen();
 
 // LED RGB functions
 void updateLedPnl();
@@ -145,8 +208,8 @@ void priceUpdateTask(void *pvParameters) {
       }
     }
     
-    // Mise à jour des données wallet toutes les 30 secondes
-    if (millis() - last_wallet_update > 30000) {
+    // Mise à jour des données wallet toutes les 15 secondes (au lieu de 30)
+    if (millis() - last_wallet_update > 15000) {
       if (api_connected && (current_screen == SCREEN_WALLET || current_screen == SCREEN_POSITIONS || current_screen == SCREEN_HISTORY)) {
         updateWalletData();
       }
@@ -171,21 +234,35 @@ void setup() {
   tft.init();
   tft.setRotation(1); // Paysage
   tft.fillScreen(COLOR_BG);
+  Serial.println("TFT init OK");
+  
+  // Init carte SD
+  // if (initSDCard()) {
+  //   Serial.println("Carte SD initialisée ✓");
+  // } else {
+  //   Serial.println("Carte SD non détectée");
+  // }
+  
+  // Afficher image/GIF de démarrage (5 secondes)
+  // showBootImage();
   
   // Message boot
   tft.setTextColor(COLOR_CYAN);
   tft.setTextSize(2);
   tft.setCursor(50, 100);
   tft.println("BOOTING...");
+  Serial.println("Affichage BOOTING...");
   delay(1000);
   
   // Init tactile avec SPI séparé
+  Serial.println("Init SPI pour touch...");
   SPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin();
   touch.setRotation(1);
   Serial.println("Touch init OK");
   
   // Init LED RGB
+  Serial.println("Init LED RGB...");
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
@@ -202,21 +279,25 @@ void setup() {
   digitalWrite(LED_BLUE, LOW);
   
   Serial.println("LED RGB OK");
+  Serial.println("Init SPIFFS...");
   if (!SPIFFS.begin(true)) {
+    Serial.println("ERREUR: SPIFFS FAIL!");
     showError("SPIFFS FAIL!");
     while(1);
   }
   Serial.println("SPIFFS OK");
   
   // Créer le mutex TFT
+  Serial.println("Creation mutex TFT...");
   tft_mutex = xSemaphoreCreateMutex();
   if (tft_mutex == NULL) {
-    Serial.println("Erreur création mutex TFT!");
+    Serial.println("ERREUR: Mutex TFT NULL!");
   } else {
     Serial.println("Mutex TFT créé ✓");
   }
   
   // Charger config
+  Serial.println("Chargement config...");
   loadConfig();
   
   // Si pas de config → Mode AP
@@ -259,23 +340,26 @@ void loop() {
 // CONFIG SPIFFS
 // =====================================================
 void loadConfig() {
+  Serial.println("Vérification fichier config.json...");
   if (!SPIFFS.exists("/config.json")) {
-    Serial.println("Pas de fichier config");
+    Serial.println("Pas de fichier config.json");
     return;
   }
   
-  File file = SPIFFS.open("/config.json", "r");
+  Serial.println("Ouverture config.json...");
+  fs::File file = SPIFFS.open("/config.json", "r");
   if (!file) {
-    Serial.println("Erreur lecture config");
+    Serial.println("Erreur ouverture config.json");
     return;
   }
   
+  Serial.println("Parsing JSON...");
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   
   if (error) {
-    Serial.println("Erreur JSON");
+    Serial.println("Erreur JSON parsing");
     return;
   }
   
@@ -284,11 +368,16 @@ void loadConfig() {
   api_key = doc["api_key"].as<String>();
   api_secret = doc["api_secret"].as<String>();
   api_passphrase = doc["api_passphrase"].as<String>();
+  lightning_address = doc["lightning_address"].as<String>();
+  deposit_lnaddress = doc["deposit_lnaddress"].as<String>();
   
   Serial.println("Config chargée:");
   Serial.println("  SSID: " + ssid_saved);
   if (api_key != "" && api_key != "public") {
     Serial.println("  API Key: " + api_key.substring(0, 10) + "...");
+  }
+  if (lightning_address != "") {
+    Serial.println("  Lightning Address: " + lightning_address);
   }
 }
 
@@ -299,8 +388,10 @@ void saveConfig() {
   doc["api_key"] = api_key;
   doc["api_secret"] = api_secret;
   doc["api_passphrase"] = api_passphrase;
+  doc["lightning_address"] = lightning_address;
+  doc["deposit_lnaddress"] = deposit_lnaddress;
   
-  File file = SPIFFS.open("/config.json", "w");
+  fs::File file = SPIFFS.open("/config.json", "w");
   if (!file) {
     Serial.println("Erreur sauvegarde config");
     return;
@@ -452,13 +543,22 @@ void handleRoot() {
       <label>LN Markets Passphrase</label>
       <input type='password' name='api_passphrase' placeholder='Passphrase (optionnel)'>
       
+      <label>Lightning Address</label>
+      <input type='text' name='lightning_address' placeholder='silex@lnbits.com (optionnel)'>
+      
+      <label>Deposit LN Address</label>
+      <input type='text' name='deposit_lnaddress' placeholder='silex@lnbits.com (optionnel)'>
+      
       <button type='submit'>💾 SAUVEGARDER</button>
     </form>
     
     <div class='info'>
       ℹ️ API Keys disponibles sur:<br>
       lnmarkets.com → Settings → API<br>
-      (Optionnel pour Phase 1)
+      <br>
+      ⚡ Lightning Address: Format user@domain.com<br>
+      (ex: silex@lnbits.com, satoshi@lnmarkets.com)<br>
+      Utilisé pour les retraits vers votre wallet Lightning
     </div>
   </div>
 </body>
@@ -474,6 +574,8 @@ void handleSave() {
   api_key = server.arg("api_key");
   api_secret = server.arg("api_secret");
   api_passphrase = server.arg("api_passphrase");
+  lightning_address = server.arg("lightning_address");
+  deposit_lnaddress = server.arg("deposit_lnaddress");
   
   // Si pas de clés API, utiliser mode public
   if (api_key == "") api_key = "public";
@@ -484,6 +586,12 @@ void handleSave() {
   Serial.println("  SSID: " + ssid_saved);
   if (api_key != "public") {
     Serial.println("  API Key: " + api_key.substring(0, 10) + "...");
+  }
+  if (lightning_address != "") {
+    Serial.println("  Lightning Address: " + lightning_address);
+  }
+  if (deposit_lnaddress != "") {
+    Serial.println("  Deposit LN Address: " + deposit_lnaddress);
   }
   
   saveConfig();
@@ -951,6 +1059,7 @@ String makeAuthenticatedRequest(String method, String path, String data) {
   }
   
   http.begin(url);
+  http.setTimeout(3000); // ⏱️ Timeout réduit à 3 secondes pour accélérer
   
   // Si on a des clés API valides, ajouter l'authentification
   if (api_key != "" && api_key != "public" && api_secret != "" && api_secret != "public") {
@@ -1087,9 +1196,8 @@ void handleTouch() {
       current_screen = SCREEN_POSITIONS;
       showPositionsScreen();
     } else {
-      // Zone HISTORY
-      current_screen = SCREEN_HISTORY;
-      showHistoryScreen();
+      // Zone HISTORY - maintenant pour les dépôts
+      getDepositHistory();
     }
     delay(200);
     return;
@@ -1172,10 +1280,60 @@ void handleTouch() {
     }
   }
   else if (current_screen == SCREEN_WALLET) {
-    // Bouton Reset Config (position ajustée selon présence de trades)
-    int reset_y_start = (running_trades_count > 0) ? 180 : 195;
-    int reset_y_end = reset_y_start + 25;
-    if (x >= 180 && x <= 300 && y >= reset_y_start && y <= reset_y_end) {
+  // Boutons montants rapides (100, 500, 1000, 2000 sats) - Y=205-220
+    if (y >= 205 && y <= 220) {
+      if (x >= 20 && x <= 65) {
+        withdraw_amount_sats = 100;
+        Serial.println("Withdraw amount: 100 sats");
+        showWalletScreen(); // Refresh display
+      } else if (x >= 75 && x <= 120) {
+        withdraw_amount_sats = 500;
+        Serial.println("Withdraw amount: 500 sats");
+        showWalletScreen(); // Refresh display
+      } else if (x >= 130 && x <= 175) {
+        withdraw_amount_sats = 1000;
+        Serial.println("Withdraw amount: 1000 sats");
+        showWalletScreen(); // Refresh display
+      } else if (x >= 185 && x <= 230) {
+        withdraw_amount_sats = 2000;
+        Serial.println("Withdraw amount: 2000 sats");
+        showWalletScreen(); // Refresh display
+      }
+    }
+    // Boutons + et - pour retrait - Y=220-240
+    else if (y >= 220 && y <= 240) {
+      if (x >= 140 && x <= 170) {
+        // Bouton - retrait
+        withdraw_amount_sats -= 100;
+        if (withdraw_amount_sats < 100) withdraw_amount_sats = 100; // Min 100 sats
+        Serial.println("Withdraw amount: " + String(withdraw_amount_sats) + " sats");
+        showWalletScreen(); // Refresh display
+      } else if (x >= 180 && x <= 210) {
+        // Bouton + retrait
+        withdraw_amount_sats += 100;
+        if (withdraw_amount_sats > 100000) withdraw_amount_sats = 100000; // Max 100k sats
+        Serial.println("Withdraw amount: " + String(withdraw_amount_sats) + " sats");
+        showWalletScreen(); // Refresh display
+      }
+    }
+    // Boutons + et - pour dépôt - Y=240-260
+    else if (y >= 240 && y <= 260) {
+      if (x >= 120 && x <= 150) {
+        // Bouton - dépôt
+        deposit_amount_sats -= 100;
+        if (deposit_amount_sats < 100) deposit_amount_sats = 100; // Min 100 sats
+        Serial.println("Deposit amount: " + String(deposit_amount_sats) + " sats");
+        showWalletScreen(); // Refresh display
+      } else if (x >= 160 && x <= 190) {
+        // Bouton + dépôt
+        deposit_amount_sats += 100;
+        if (deposit_amount_sats > 100000) deposit_amount_sats = 100000; // Max 100k sats
+        Serial.println("Deposit amount: " + String(deposit_amount_sats) + " sats");
+        showWalletScreen(); // Refresh display
+      }
+    }
+    // Bouton Reset Config (position ajustée)
+    else if (x >= 180 && x <= 300 && y >= 195 && y <= 220) {
       Serial.println("🔄 RESET CONFIG!");
       tft.fillScreen(COLOR_BG);
       tft.setTextColor(COLOR_RED);
@@ -1186,6 +1344,24 @@ void handleTouch() {
       SPIFFS.remove("/config.json");
       delay(2000);
       ESP.restart();
+    }
+    
+    // Bouton Withdraw (bord droit, en haut)
+    if (x >= 250 && x <= 315 && y >= 50 && y <= 75) {
+      Serial.println("💰 WITHDRAW pressed");
+      withdrawBalance();
+    }
+    
+    // Bouton Deposit (bord droit, en dessous)
+    if (x >= 250 && x <= 315 && y >= 85 && y <= 110) {
+      Serial.println("📥 DEPOSIT pressed");
+      showDepositManagementScreen();
+    }
+    
+    // Bouton Deposit History (bord droit, en dessous)
+    if (x >= 250 && x <= 315 && y >= 120 && y <= 145) {
+      Serial.println("📋 DEPOSIT HISTORY pressed");
+      getDepositHistory();
     }
   }
   else if (current_screen == SCREEN_POSITIONS) {
@@ -1302,7 +1478,15 @@ void executeTrade(String side, int margin) {
 // ÉCRAN WALLET
 // =====================================================
 void showWalletScreen() {
+  fadeOut(); // Transition fluide
+  
   tft.fillScreen(COLOR_BG);
+  
+  // Fill black borders to cover any blue lines from TFT hardware
+  tft.fillRect(0, 0, 320, 1, TFT_BLACK);     // top
+  tft.fillRect(0, 239, 320, 1, TFT_BLACK);   // bottom
+  tft.fillRect(0, 0, 1, 240, TFT_BLACK);     // left
+  tft.fillRect(319, 0, 1, 240, TFT_BLACK);   // right
   
   // Header avec navigation
   tft.fillRect(0, 0, 80, 40, 0x39E7); // HOME gris
@@ -1346,60 +1530,202 @@ void showWalletScreen() {
   tft.print("$");
   tft.println(balance_usd, 2);
   
-  // Margin en positions
+  // Margin en positions (nouveau)
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(20, 125);
+  tft.setCursor(20, 115);
   tft.println("Margin en positions:");
   
-  tft.setTextColor(0xFD20); // Orange
+  tft.setTextColor(COLOR_CYAN);
   tft.setTextSize(2);
-  tft.setCursor(20, 140);
+  tft.setCursor(20, 130);
   tft.print(margin_in_positions);
   tft.setTextSize(1);
   tft.println(" sats");
   
-  // Total wallet
-  long total_wallet = balance_sats + margin_in_positions;
+  // Montant de retrait sélectionné (descendu)
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(20, 160);
-  tft.println("Total wallet:");
+  tft.setCursor(20, 150);
+  tft.println("Montant retrait:");
   
   tft.setTextColor(COLOR_CYAN);
   tft.setTextSize(2);
-  tft.setCursor(20, 175);
-  tft.print(total_wallet);
+  tft.setCursor(20, 165);
+  tft.print(withdraw_amount_sats);
   tft.setTextSize(1);
   tft.println(" sats");
   
-  // Trades en cours
+  // Boutons montants rapides (100, 500, 1000, 2000 sats) - remontés
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(180, 125);
-  tft.print("Trades actifs: ");
-  tft.print(running_trades_count);
+  tft.setCursor(20, 185);
+  tft.println("MONTANTS RAPIDES:");
   
-  // Info
-  tft.setTextSize(1);
-  tft.setTextColor(0x39E7);
-  tft.setCursor(20, 200);
-  tft.println("Auto-refresh: 5s");
-  
-  // Bouton Reset Config
-  tft.fillRoundRect(180, 195, 120, 25, 5, 0x4208); // Rouge foncé
+  // 100 sats
+  tft.fillRoundRect(20, 195, 45, 15, 3, 0x39E7);
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
-  tft.setCursor(190, 205);
-  tft.println("RESET CONFIG");
+  tft.setCursor(25, 200);
+  tft.println("100");
+  
+  // 500 sats
+  tft.fillRoundRect(75, 195, 45, 15, 3, 0x39E7);
+  tft.setCursor(80, 200);
+  tft.println("500");
+  
+  // 1000 sats
+  tft.fillRoundRect(130, 195, 45, 15, 3, 0x39E7);
+  tft.setCursor(135, 200);
+  tft.println("1000");
+  
+  // 2000 sats
+  tft.fillRoundRect(185, 195, 45, 15, 3, 0x39E7);
+  tft.setCursor(190, 200);
+  tft.println("2000");
+  
+  // Contrôles + et - pour retrait (remontés)
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(20, 215);
+  tft.print("AJUSTER RETRAIT: ");
+  
+  // Bouton - retrait
+  tft.fillRoundRect(140, 210, 30, 20, 3, 0x39E7);
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(150, 215);
+  tft.println("-");
+  
+  // Bouton + retrait
+  tft.fillRoundRect(180, 210, 30, 20, 3, 0x39E7);
+  tft.setCursor(190, 215);
+  tft.println("+");
+  
+  // Bouton Reset Config - remonté
+  tft.fillRoundRect(260, 210, 55, 20, 5, 0x4208); // Rouge foncé - déplacé complètement à droite
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(265, 215);
+  tft.println("RESET");
+  
+  // Boutons sur le bord droit - petits et empilés
+  // Bouton Withdraw (en haut à droite)
+  tft.fillRoundRect(250, 50, 65, 25, 5, 0xFD20); // Orange
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(255, 58);
+  tft.println("WITHDRAW");
+  
+  // Bouton Deposit (en dessous)
+  tft.fillRoundRect(250, 85, 65, 25, 5, 0x07E0); // Vert
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(260, 93);
+  tft.println("DEPOSIT");
+  
+  // Bouton Deposit History (en dessous)
+  tft.fillRoundRect(250, 120, 65, 25, 5, 0x39E7); // Gris
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(255, 128);
+  tft.println("HISTORY");
   
   Serial.println("Écran Wallet affiché");
+}
+
+// =====================================================
+// ÉCRAN GESTION DÉPÔTS
+// =====================================================
+void showDepositManagementScreen() {
+  Serial.println("📥 Affichage écran gestion dépôts");
+
+  // Vérifier si une adresse de dépôt est configurée
+  if (deposit_lnaddress == "") {
+    Serial.println("❌ Aucune adresse de dépôt configurée");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 80);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 110);
+    tft.println("Adresse de dépôt");
+    tft.setCursor(20, 140);
+    tft.println("non configurée!");
+    tft.setCursor(20, 170);
+    tft.println("Configurez-la dans");
+    tft.setCursor(20, 200);
+    tft.println("le portail AP.");
+    delay(5000);
+    showWalletScreen();
+    return;
+  }
+
+  fadeOut(); // Transition fluide
+
+  tft.fillScreen(TFT_BLACK); // Fond noir cyberpunk
+
+  // Fill black borders to cover any blue lines from TFT hardware
+  tft.fillRect(0, 0, 320, 1, TFT_BLACK);     // top
+  tft.fillRect(0, 239, 320, 1, TFT_BLACK);   // bottom
+  tft.fillRect(0, 0, 1, 240, TFT_BLACK);     // left
+  tft.fillRect(319, 0, 1, 240, TFT_BLACK);   // right
+
+  // Générer le QR code localement avec la bibliothèque QRCode
+  Serial.println("🔄 Génération QR code local...");
+
+  QRCode qrcode;
+  uint8_t qrcodeData[qrcode_getBufferSize(6)];
+  qrcode_initText(&qrcode, qrcodeData, 6, ECC_LOW, deposit_lnaddress.c_str());
+
+  // Calculer la taille et position du QR code (centré)
+  int qrSize = qrcode.size * 4; // Scale factor de 4 pour une meilleure visibilité
+  int qrX = (320 - qrSize) / 2; // Centré horizontalement
+  int qrY = (240 - qrSize) / 2; // Centré verticalement
+
+  // Fond noir cyberpunk pour le QR code
+  tft.fillRect(qrX, qrY, qrSize, qrSize, TFT_BLACK);
+
+  // Dessiner le QR code module par module
+  for (uint8_t y = 0; y < qrcode.size; y++) {
+    for (uint8_t x = 0; x < qrcode.size; x++) {
+      if (qrcode_getModule(&qrcode, x, y)) {
+        // Module actif = blanc (visible sur fond noir)
+        tft.fillRect(qrX + x * 4, qrY + y * 4, 4, 4, TFT_WHITE);
+      } else {
+        // Module inactif = noir (fond déjà noir)
+        // tft.fillRect(qrX + x * 4, qrY + y * 4, 4, 4, TFT_BLACK);
+      }
+    }
+  }
+
+  Serial.println("✅ QR code de dépôt généré localement!");
+  Serial.println("✅ Écran gestion dépôts affiché");
+
+  // Attendre 2 minutes ou touch pour annuler
+  unsigned long startTime = millis();
+  while (millis() - startTime < 120000) { // 2 minutes = 120 secondes
+    delay(100); // Petit délai pour éviter de bloquer complètement
+
+    // Vérifier si l'utilisateur touche l'écran pour annuler
+    uint16_t touchX, touchY;
+    if (tft.getTouch(&touchX, &touchY)) {
+      Serial.println("👆 Touch détecté - retour anticipé");
+      break; // Sortir de la boucle d'attente
+    }
+  }
+
+  // Timeout ou touch détecté
+  Serial.println("⏰ Fin écran dépôt, retour auto");
+  showWalletScreen();
 }
 
 // =====================================================
 // ÉCRAN POSITIONS
 // =====================================================
 void showPositionsScreen() {
+  fadeOut(); // Transition fluide
+  
   tft.fillScreen(COLOR_BG);
   
   // Header avec navigation
@@ -1534,6 +1860,8 @@ void showPositionsScreen() {
 // ÉCRAN HISTORY
 // =====================================================
 void showHistoryScreen() {
+  fadeOut(); // Transition fluide
+  
   tft.fillScreen(COLOR_BG);
   
   // Header avec navigation
@@ -1604,6 +1932,12 @@ void showHistoryScreen() {
 // UPDATE WALLET DATA
 // =====================================================
 void updateWalletData() {
+  // Vérifier le cache - éviter les appels trop fréquents
+  if (millis() - last_wallet_update < WALLET_CACHE_DURATION) {
+    Serial.println("💾 Données wallet en cache (moins de 10s)");
+    return;
+  }
+  
   Serial.println("\n=== UPDATE WALLET DATA ===");
   
   if (api_key == "" || api_key == "public") {
@@ -1614,6 +1948,9 @@ void updateWalletData() {
   Serial.println("🔄 Récupération données wallet...");
   Serial.print("API Key: ");
   Serial.println(api_key.substring(0, 10) + "...");
+  
+  // Marquer le début de la mise à jour
+  last_wallet_update = millis();
   
   // Get account balance
   Serial.println("📡 Appel API: GET /account");
@@ -2015,9 +2352,35 @@ void closeTrade(String positionId) {
 }
 
 // =====================================================
-// LED RGB - INDICATEUR P&L AVEC 5 VITESSES
+// GESTION CARTE SD ET IMAGES DE DEMARRAGE
+// =====================================================
+
+
+
+
+
+
+// =====================================================
+// LED RGB - INDICATEUR P&L AVEC 5 VITESSES ou CONFIG
 // =====================================================
 void updateLedPnl() {
+  // Priorité au mode configuration
+  if (config_mode) {
+    // LED bleu foncé pulsant lentement en mode config
+    if (millis() - last_config_led_blink > config_blink_speed) {
+      config_led_blink_state = !config_led_blink_state;
+      last_config_led_blink = millis();
+      
+      if (config_led_blink_state) {
+        setLedRGB(0, 0, 1); // Bleu foncé (seulement bleu)
+      } else {
+        setLedRGB(0, 0, 0); // Éteint
+      }
+    }
+    return; // Ne pas exécuter le code P&L en mode config
+  }
+  
+  // Mode normal - Indicateur P&L
   // Pas de positions = LED éteinte
   if (running_trades_count == 0) {
     setLedRGB(0, 0, 0);
@@ -2120,4 +2483,916 @@ void setLedRGB(int red, int green, int blue) {
   digitalWrite(LED_RED, red ? LOW : HIGH);
   digitalWrite(LED_GREEN, green ? LOW : HIGH);
   digitalWrite(LED_BLUE, blue ? LOW : HIGH);
+}
+
+// =====================================================
+// FONCTIONS LNURL POUR PAIEMENTS LIGHTNING
+// =====================================================
+
+// Résoudre une adresse Lightning (user@domain.com) en URL LNURL-pay
+String resolveLightningAddress(String address) {
+  Serial.println("🔍 Résolution adresse Lightning: " + address);
+  
+  // Séparer user et domain
+  int atIndex = address.indexOf('@');
+  if (atIndex == -1) {
+    Serial.println("❌ Adresse Lightning invalide (pas de @)");
+    return "";
+  }
+  
+  String user = address.substring(0, atIndex);
+  String domain = address.substring(atIndex + 1);
+  
+  Serial.println("  User: " + user);
+  Serial.println("  Domain: " + domain);
+  
+  // Construire l'URL LNURL
+  String lnurl = "https://" + domain + "/.well-known/lnurlp/" + user;
+  Serial.println("  LNURL: " + lnurl);
+  
+  return lnurl;
+}
+
+// Obtenir l'URL de paiement depuis l'URL LNURL
+String getPayUrl(String lnurl) {
+  Serial.println("📡 Requête LNURL: " + lnurl);
+  
+  HTTPClient http;
+  http.begin(lnurl);
+  http.setTimeout(5000); // 5 secondes timeout
+  
+  int httpCode = http.GET();
+  String response = http.getString();
+  
+  Serial.print("📨 Code HTTP LNURL: ");
+  Serial.println(httpCode);
+  Serial.println("📨 Réponse LNURL: " + response.substring(0, 200) + "...");
+  
+  http.end();
+  
+  if (httpCode != 200) {
+    Serial.println("❌ Erreur HTTP LNURL: " + String(httpCode));
+    return "";
+  }
+  
+  // Parser la réponse JSON
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, response);
+  
+  if (error) {
+    Serial.println("❌ Erreur parsing JSON LNURL");
+    return "";
+  }
+  
+  // Vérifier que c'est un endpoint payRequest
+  if (!doc.containsKey("callback")) {
+    Serial.println("❌ Pas d'URL callback dans la réponse LNURL");
+    return "";
+  }
+  
+  String callback = doc["callback"].as<String>();
+  Serial.println("✅ URL callback trouvée: " + callback);
+  
+  return callback;
+}
+
+// Générer une invoice Lightning depuis l'URL de paiement
+String generateInvoice(String payUrl, long amount_sats) {
+  Serial.println("💰 Génération invoice: " + String(amount_sats) + " sats");
+  Serial.println("📡 URL paiement: " + payUrl);
+  
+  // Convertir sats en millisats (LNURL utilise des millisats)
+  long amount_msats = amount_sats * 1000;
+  
+  // Ajouter le paramètre amount à l'URL
+  String url = payUrl + "?amount=" + String(amount_msats);
+  Serial.println("📡 URL complète: " + url);
+  
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(5000); // 5 secondes timeout
+  
+  int httpCode = http.GET();
+  String response = http.getString();
+  
+  Serial.print("📨 Code HTTP invoice: ");
+  Serial.println(httpCode);
+  Serial.println("📨 Réponse invoice: " + response.substring(0, 200) + "...");
+  
+  http.end();
+  
+  if (httpCode != 200) {
+    Serial.println("❌ Erreur HTTP invoice: " + String(httpCode));
+    return "";
+  }
+  
+  // Parser la réponse JSON
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, response);
+  
+  if (error) {
+    Serial.println("❌ Erreur parsing JSON invoice");
+    return "";
+  }
+  
+  // Extraire l'invoice BOLT11
+  if (!doc.containsKey("pr")) {
+    Serial.println("❌ Pas d'invoice (pr) dans la réponse");
+    return "";
+  }
+  
+  String invoice = doc["pr"].as<String>();
+  Serial.println("✅ Invoice générée: " + invoice.substring(0, 50) + "...");
+  
+  return invoice;
+}
+
+// =====================================================
+// WITHDRAW BALANCE
+// =====================================================
+void withdrawBalance() {
+  if (api_key == "" || api_key == "public") {
+    Serial.println("Pas de clés API - impossible de retirer");
+    return;
+  }
+  
+  // Vérifier qu'une adresse Lightning est configurée
+  if (lightning_address == "") {
+    Serial.println("❌ Aucune adresse Lightning configurée");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 80);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 110);
+    tft.println("Adresse Lightning");
+    tft.setCursor(20, 140);
+    tft.println("non configurée!");
+    tft.setCursor(20, 170);
+    tft.println("Configurez-la dans");
+    tft.setCursor(20, 200);
+    tft.println("le portail AP.");
+    delay(5000);
+    showWalletScreen();
+    return;
+  }
+  
+  Serial.println("💰 Retrait de " + String(withdraw_amount_sats) + " sats");
+  Serial.println("📧 Adresse Lightning: " + lightning_address);
+  
+  // Étape 1: Résoudre l'adresse Lightning en URL LNURL
+  String lnurl = resolveLightningAddress(lightning_address);
+  if (lnurl == "") {
+    Serial.println("❌ Impossible de résoudre l'adresse Lightning");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 80);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 110);
+    tft.println("Adresse Lightning");
+    tft.setCursor(20, 140);
+    tft.println("invalide!");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Étape 2: Obtenir l'URL de paiement depuis LNURL
+  String payUrl = getPayUrl(lnurl);
+  if (payUrl == "") {
+    Serial.println("❌ Impossible d'obtenir l'URL de paiement");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 80);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 110);
+    tft.println("Service LNURL");
+    tft.setCursor(20, 140);
+    tft.println("indisponible!");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Étape 3: Générer l'invoice avec le montant sélectionné
+  String invoice = generateInvoice(payUrl, withdraw_amount_sats);
+  if (invoice == "") {
+    Serial.println("❌ Impossible de générer l'invoice");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 80);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 110);
+    tft.println("Génération invoice");
+    tft.setCursor(20, 140);
+    tft.println("échouée!");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  Serial.println("✅ Invoice générée avec succès");
+  
+  // Construire le JSON pour l'API LN Markets
+  String jsonData = "{";
+  jsonData += "\"invoice\":\"" + invoice + "\"";
+  jsonData += "}";
+  
+  Serial.println("📡 Envoi à LN Markets API...");
+  
+  // Appeler l'API - endpoint /account/withdraw/lightning
+  String response = makeAuthenticatedRequest("POST", "/account/withdraw/lightning", jsonData);
+  
+  if (response != "") {
+    Serial.println("Réponse withdraw: " + response);
+    
+    // Parser la réponse
+    JsonDocument doc;
+    DeserializationError error = deserializeJson(doc, response);
+    
+    if (!error) {
+      if (doc["id"].is<String>()) {
+        // Retrait réussi
+        Serial.println("✅ Retrait initié avec succès!");
+        tft.fillScreen(COLOR_BG);
+        tft.setTextColor(COLOR_GREEN);
+        tft.setTextSize(3);
+        tft.setCursor(40, 100);
+        tft.println("WITHDRAW");
+        tft.setCursor(60, 130);
+        tft.println("DONE!");
+        tft.setTextSize(1);
+        tft.setCursor(40, 160);
+        tft.print(String(withdraw_amount_sats) + " sats");
+        delay(3000);
+        updateWalletData(); // Rafraîchir le solde
+        showWalletScreen();
+      } else if (doc["message"].is<String>()) {
+        // Erreur
+        String errorMsg = doc["message"];
+        Serial.println("❌ Erreur retrait: " + errorMsg);
+        tft.fillScreen(COLOR_BG);
+        tft.setTextColor(TFT_RED);
+        tft.setTextSize(2);
+        tft.setCursor(20, 100);
+        tft.println("WITHDRAW ERROR:");
+        tft.setCursor(20, 130);
+        tft.println(errorMsg.substring(0, 20));
+        delay(4000);
+        showWalletScreen();
+      }
+    } else {
+      Serial.println("Erreur parsing JSON réponse withdraw");
+    }
+  } else {
+    Serial.println("Aucune réponse de l'API withdraw");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("NO API RESPONSE");
+    delay(3000);
+    showWalletScreen();
+  }
+}
+
+// =====================================================
+// GET DEPOSIT ADDRESS
+// =====================================================
+void getDepositAddress() {
+  fadeOut(); // Transition fluide
+  
+  Serial.println("📥 Fonction dépôt appelée");
+  
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_CYAN);
+  tft.setTextSize(3);
+  tft.setCursor(80, 30);
+  tft.println("DEPOSITS");
+  
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(20, 70);
+  tft.println("Lightning deposits must");
+  tft.setCursor(35, 95);
+  tft.println("be made through the");
+  tft.setCursor(10, 120);
+  tft.println("LN Markets web interface:");
+  
+  tft.setTextColor(COLOR_GREEN);
+  tft.setTextSize(2);
+  tft.setCursor(90, 150);
+  tft.println("lnmarkets.com");
+  
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+  tft.setCursor(50, 180);
+  tft.println("Use your account to");
+  tft.setCursor(70, 205);
+  tft.println("make deposits.");
+  
+  Serial.println("✅ Écran dépôt affiché avec instructions");
+  
+  // Attendre 5 secondes puis retour auto
+  delay(5000);
+  showWalletScreen();
+}
+
+// =====================================================
+// GET DEPOSIT HISTORY
+// =====================================================
+void getDepositHistory() {
+  if (api_key == "" || api_key == "public") {
+    Serial.println("Pas de clés API - impossible de récupérer l'historique des dépôts");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 130);
+    tft.println("Clés API requises");
+    tft.setCursor(20, 160);
+    tft.println("pour historique");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  Serial.println("📥 Récupération historique dépôts Lightning...");
+  
+  tft.fillScreen(COLOR_BG);
+  tft.setTextColor(COLOR_CYAN);
+  tft.setTextSize(2);
+  tft.setCursor(30, 100);
+  tft.println("GETTING DEPOSIT");
+  tft.setCursor(50, 130);
+  tft.println("HISTORY...");
+  
+  // Clear previous deposits
+  lightning_deposits_count = 0;
+  for (int i = 0; i < 10; i++) {
+    lightning_deposits_details[i] = "";
+    lightning_deposits_amounts[i] = 0;
+    lightning_deposits_dates[i] = "";
+    lightning_deposits_hashes[i] = "";
+    lightning_deposits_comments[i] = "";
+  }
+  
+  // Appeler l'API LN Markets pour obtenir l'historique des dépôts Lightning
+  Serial.println("📡 GET /account/deposits/lightning?limit=10");
+  String response = makeAuthenticatedRequest("GET", "/account/deposits/lightning", "limit=10");
+
+  if (response == "") {
+    Serial.println("❌ Aucune réponse de l'API deposits/lightning");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR API");
+    tft.setCursor(20, 130);
+    tft.println("Pas de réponse");
+    tft.setCursor(20, 160);
+    tft.println("historique dépôts");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+
+  Serial.println("Réponse deposits history: " + response.substring(0, 200) + "...");
+
+  // Parser la réponse JSON
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, response);
+
+  if (error) {
+    Serial.println("❌ Erreur parsing JSON deposits history");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR PARSING");
+    tft.setCursor(20, 130);
+    tft.println("JSON historique");
+    tft.setCursor(20, 160);
+    tft.println("invalide");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+
+  // Extraire les données des dépôts
+  if (doc.containsKey("data")) {
+    JsonArray deposits = doc["data"];
+    lightning_deposits_count = deposits.size();
+    
+    Serial.print("✅ ");
+    Serial.print(lightning_deposits_count);
+    Serial.println(" dépôts trouvés");
+    
+    int depositIndex = 0;
+    for (JsonVariant deposit : deposits) {
+      if (depositIndex < 10) {
+        String id = deposit["id"].as<String>();
+        long amount = deposit["amount"].as<long>();
+        String createdAt = deposit["createdAt"].as<String>();
+        String paymentHash = deposit["paymentHash"].as<String>();
+        String comment = deposit["comment"].as<String>();
+        
+        // Format date (take just the date part)
+        if (createdAt.length() > 10) {
+          createdAt = createdAt.substring(0, 10);
+        }
+        
+        // Store data
+        lightning_deposits_amounts[depositIndex] = amount;
+        lightning_deposits_dates[depositIndex] = createdAt;
+        lightning_deposits_hashes[depositIndex] = paymentHash;
+        lightning_deposits_comments[depositIndex] = comment;
+        
+        // Create detail string
+        String detail = String(amount) + " sats - " + id.substring(0, 8) + "...";
+        lightning_deposits_details[depositIndex] = detail;
+        
+        depositIndex++;
+      }
+    }
+    
+    Serial.println("✅ Historique dépôts chargé");
+    showDepositHistoryScreen();
+  } else {
+    Serial.println("❌ Aucune donnée trouvée dans la réponse");
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR:");
+    tft.setCursor(20, 130);
+    tft.println("Aucune donnée");
+    tft.setCursor(20, 160);
+    tft.println("dans la réponse");
+    delay(3000);
+    showWalletScreen();
+  }
+}
+
+// =====================================================
+// SHOW DEPOSIT HISTORY SCREEN
+// =====================================================
+void showDepositHistoryScreen() {
+  fadeOut(); // Transition fluide
+  
+  tft.fillScreen(COLOR_BG);
+  
+  // Header avec navigation
+  tft.fillRect(0, 0, 80, 40, 0x39E7); // HOME gris
+  tft.fillRect(80, 0, 80, 40, COLOR_RED); // WALLET rouge (actif)
+  tft.fillRect(160, 0, 80, 40, 0x39E7); // POSITIONS gris
+  tft.fillRect(240, 0, 80, 40, 0x39E7); // HISTORY gris
+  
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(20, 12);
+  tft.println("HOME");
+  tft.setCursor(95, 12);
+  tft.println("WALLET");
+  tft.setCursor(170, 12);
+  tft.println("POS");
+  tft.setCursor(250, 12);
+  tft.println("HIST");
+  
+  // Titre
+  tft.setTextColor(COLOR_CYAN);
+  tft.setTextSize(2);
+  tft.setCursor(40, 50);
+  tft.println("DEPOSIT HISTORY");
+  
+  // Afficher les dépôts
+  if (lightning_deposits_count == 0) {
+    tft.setTextColor(TFT_WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(50, 100);
+    tft.println("No deposits");
+    tft.setTextSize(1);
+    tft.setCursor(30, 130);
+    tft.println("found in your account");
+  } else {
+    int y_pos = 80;
+    for (int i = 0; i < 8 && lightning_deposits_details[i] != ""; i++) {
+      // Détails du dépôt
+      tft.setTextColor(TFT_WHITE);
+      tft.setTextSize(1);
+      tft.setCursor(10, y_pos);
+      tft.print(lightning_deposits_details[i]);
+      
+      // Montant en sats
+      tft.setCursor(200, y_pos);
+      tft.setTextColor(COLOR_GREEN);
+      tft.print(lightning_deposits_amounts[i]);
+      tft.print(" sats");
+      
+      // Date
+      tft.setTextColor(0x39E7);
+      tft.setCursor(10, y_pos + 12);
+      tft.print(lightning_deposits_dates[i]);
+      
+      // Comment si présent
+      if (lightning_deposits_comments[i] != "" && lightning_deposits_comments[i] != "null") {
+        tft.setTextColor(TFT_YELLOW);
+        tft.setCursor(100, y_pos + 12);
+        String comment = lightning_deposits_comments[i];
+        if (comment.length() > 15) {
+          comment = comment.substring(0, 12) + "...";
+        }
+        tft.print(comment);
+      }
+      
+      y_pos += 30;
+      if (y_pos > 220) break;
+    }
+    
+    // Total des dépôts
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(1);
+    tft.setCursor(10, 225);
+    tft.print("Total deposits: ");
+    tft.print(lightning_deposits_count);
+  }
+  
+  Serial.println("Écran historique dépôts affiché");
+}
+
+// =====================================================
+// SHOW DEPOSIT TEXT SCREEN (sans QR)
+// =====================================================
+void showDepositTextScreen(String address) {
+  Serial.println("🔄 Début showDepositTextScreen");
+  tft.fillScreen(TFT_BLACK);  // Black background
+
+  // Add black borders to completely hide any TFT artifacts
+  tft.fillRect(0, 0, 320, 1, TFT_BLACK);     // top
+  tft.fillRect(0, 239, 320, 1, TFT_BLACK);   // bottom
+  tft.fillRect(0, 0, 1, 240, TFT_BLACK);     // left
+  tft.fillRect(319, 0, 1, 240, TFT_BLACK);   // right
+
+  // Titre
+  tft.setTextColor(COLOR_CYAN);
+  tft.setTextSize(2);
+  tft.setCursor(70, 10);
+  tft.println("DEPOSIT");
+
+  // Indication du type
+  tft.setTextColor(TFT_YELLOW);
+  tft.setTextSize(1);
+  tft.setCursor(10, 30);
+  if (address.indexOf("lnurl") != -1 || address.indexOf("@") != -1) {
+    tft.println("Type: LNURL (Lightning Address)");
+  } else {
+    tft.println("Type: Invoice classique");
+  }
+
+  // Instructions
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(10, 50);
+  tft.println("Copiez cette adresse dans votre");
+  tft.setCursor(10, 65);
+  tft.println("wallet Lightning:");
+
+  // Afficher l'adresse en gros caractères
+  tft.setTextColor(TFT_GREEN);
+  tft.setTextSize(1);
+
+  // Diviser l'adresse en lignes pour qu'elle rentre
+  String addr = address;
+  int maxCharsPerLine = 25; // Environ 25 caractères par ligne à taille 1
+
+  int startY = 85;
+  int lineHeight = 15;
+
+  for (int i = 0; i < addr.length(); i += maxCharsPerLine) {
+    String line = addr.substring(i, min(i + maxCharsPerLine, (int)addr.length()));
+    tft.setCursor(10, startY);
+    tft.println(line);
+    startY += lineHeight;
+
+    if (startY > 200) break; // Éviter de dépasser l'écran
+  }
+
+  // Instructions finales
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(10, 220);
+  tft.println("Montant: " + String(deposit_amount_sats) + " sats");
+
+  Serial.println("✅ Écran dépôt texte affiché");
+
+  // Attendre 2 minutes puis retour auto
+  unsigned long startTime = millis();
+  while (millis() - startTime < 120000) { // 2 minutes = 120 secondes
+    delay(100); // Petit délai pour éviter de bloquer complètement
+
+    // Vérifier si l'utilisateur touche l'écran pour annuler
+    uint16_t touchX, touchY;
+    if (tft.getTouch(&touchX, &touchY)) {
+      Serial.println("👆 Touch détecté - retour anticipé");
+      break; // Sortir de la boucle d'attente
+    }
+  }
+
+  // Timeout
+  Serial.println("⏰ Timeout écran dépôt, retour auto");
+  showWalletScreen();
+}
+
+// =====================================================
+// SHOW DEPOSIT QR SCREEN
+// =====================================================
+// PNG DRAW CALLBACK FOR QR CODE DISPLAY
+// =====================================================
+int pngDraw(PNGDRAW *pDraw) {
+  uint16_t lineBuffer[320]; // Buffer pour une ligne d'écran (320 pixels max)
+  
+  // Initialiser le buffer avec du blanc
+  memset(lineBuffer, 0xFF, sizeof(lineBuffer));
+  
+  // Utiliser l'objet PNG global
+  pngGlobal.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xFFFF);
+  
+  // Calculer la position Y pour centrer verticalement
+  int startY = globalQrY + pDraw->y;
+  
+  // Afficher la ligne sur l'écran TFT (centrer horizontalement à globalQrX)
+  tft.pushImage(globalQrX, startY, pDraw->iWidth, 1, lineBuffer);
+  
+  return 1; // Continuer le décodage
+}
+
+// =====================================================
+// SHOW DEPOSIT QR SCREEN
+// =====================================================
+void showDepositQRScreen(String address) {
+  Serial.println("🔄 Début showDepositQRScreen");
+  tft.fillScreen(TFT_BLACK);  // Black background to hide blue lines
+  
+  // Add black borders to completely hide any TFT artifacts
+  tft.fillRect(0, 0, 320, 1, TFT_BLACK);     // top
+  tft.fillRect(0, 239, 320, 1, TFT_BLACK);   // bottom
+  tft.fillRect(0, 0, 1, 240, TFT_BLACK);     // left
+  tft.fillRect(319, 0, 1, 240, TFT_BLACK);   // right
+  
+  // Titre
+  tft.setTextColor(COLOR_CYAN);
+  tft.setTextSize(2);
+  tft.setCursor(70, 10);
+  tft.println("DEPOSIT");
+
+  // Indication du type de QR
+  tft.setTextColor(TFT_YELLOW);
+  tft.setTextSize(1);
+  tft.setCursor(10, 30);
+  if (address.indexOf("lnurl") != -1 || address.indexOf("@") != -1) {
+    tft.println("Type: LNURL (Lightning Address)");
+  } else {
+    tft.println("Type: Invoice classique");
+  }
+
+  // Instructions
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(10, 225);
+  tft.println("Scannez avec wallet Lightning");
+  tft.setCursor(10, 235);
+  tft.println("Montant: " + String(deposit_amount_sats) + " sats");
+  
+  Serial.println("🌐 Generation QR code via service web...");
+  
+  // Encoder l'adresse pour l'URL (remplacer les caractères spéciaux)
+  String encodedAddress = address;
+  encodedAddress.replace(" ", "%20");
+  encodedAddress.replace(":", "%3A");
+  encodedAddress.replace("/", "%2F");
+  encodedAddress.replace("?", "%3F");
+  encodedAddress.replace("&", "%26");
+  encodedAddress.replace("=", "%3D");
+  encodedAddress.replace("+", "%2B");
+  
+  // Taille QR test 150x150 pour améliorer la lisibilité
+  int qrSize = 150;
+  int qrX = (320 - qrSize) / 2;
+  int qrY = 240 - qrSize - 10; // 10px de marge en bas
+  globalQrX = qrX; // Mettre à jour les variables globales
+  globalQrY = qrY;
+  String qrUrl = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&format=png&ecc=H&margin=0&data=" + encodedAddress;
+    // Préparer le fond blanc pour le QR (en bas, centré)
+    tft.fillRect(qrX, qrY, qrSize, qrSize, TFT_WHITE);
+  
+  Serial.println("📡 URL QR: " + qrUrl);
+  
+  // Faire l'appel HTTP pour récupérer l'image QR
+  HTTPClient http;
+  http.begin(qrUrl);
+  http.setTimeout(30000); // 30 secondes timeout
+  
+  Serial.println("📥 Téléchargement image QR...");
+  unsigned long startGetTime = millis();
+  int httpCode = http.GET();
+  unsigned long getDuration = millis() - startGetTime;
+  Serial.printf("🔍 Code HTTP: %d (durée: %lu ms)\n", httpCode, getDuration);
+  
+  if (httpCode != 200) {
+    Serial.printf("❌ Erreur HTTP: %d\n", httpCode);
+    
+    // Afficher le début de la réponse d'erreur
+    String errorResponse = http.getString();
+    Serial.println("📄 Réponse d'erreur (100 premiers caractères):");
+    Serial.println(errorResponse.substring(0, 100));
+    
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR RESEAU");
+    tft.setCursor(20, 130);
+    tft.println("Code: " + String(httpCode));
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Pour les réponses chunkées, utilisons getString() qui gère automatiquement les chunks
+  Serial.println("📖 Récupération réponse complète...");
+  unsigned long startStringTime = millis();
+  String imageData = http.getString();
+  unsigned long stringDuration = millis() - startStringTime;
+  
+  size_t dataLength = imageData.length();
+  Serial.printf("📏 Données reçues: %d bytes (durée: %lu ms)\n", dataLength, stringDuration);
+  
+  http.end();
+  
+  // Vérifier que la taille est raisonnable pour une image QR 160x160 (devrait être autour de 1-15KB)
+  if (dataLength < 500) {
+    Serial.println("❌ Image trop petite - probablement une erreur");
+    Serial.printf("📏 Taille reçue: %d bytes (attendu: 500-50000)\n", dataLength);
+    Serial.println("📄 Début du contenu (hex):");
+    for (int i = 0; i < min(64, (int)dataLength); i++) {
+      if (i % 16 == 0) Serial.printf("\n%04X: ", i);
+      Serial.printf("%02X ", (uint8_t)imageData[i]);
+    }
+    Serial.println("\n📄 Signature PNG attendue: 89 50 4E 47 0D 0A 1A 0A");
+    Serial.printf("📄 Signature reçue: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                  (uint8_t)imageData[0], (uint8_t)imageData[1], (uint8_t)imageData[2], (uint8_t)imageData[3],
+                  (uint8_t)imageData[4], (uint8_t)imageData[5], (uint8_t)imageData[6], (uint8_t)imageData[7]);
+    Serial.println("\n📄 Début du contenu (ASCII):");
+    for (int i = 0; i < min(100, (int)dataLength); i++) {
+      char c = imageData[i];
+      if (c >= 32 && c <= 126) {
+        Serial.print(c);
+      } else {
+        Serial.print('.');
+      }
+    }
+    Serial.println();
+    
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR IMAGE");
+    tft.setCursor(20, 130);
+    tft.println("Contenu invalide");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  if (dataLength > 50000) {
+    Serial.println("❌ Image trop grande");
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR IMAGE");
+    tft.setCursor(20, 130);
+    tft.println("Trop volumineuse");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Vérifier la signature PNG
+  if (dataLength >= 8 && 
+      (uint8_t)imageData[0] == 0x89 && (uint8_t)imageData[1] == 0x50 && 
+      (uint8_t)imageData[2] == 0x4E && (uint8_t)imageData[3] == 0x47 &&
+      (uint8_t)imageData[4] == 0x0D && (uint8_t)imageData[5] == 0x0A &&
+      (uint8_t)imageData[6] == 0x1A && (uint8_t)imageData[7] == 0x0A) {
+    Serial.println("✅ Signature PNG valide");
+  } else {
+    Serial.println("❌ Signature PNG invalide");
+    Serial.printf("📄 Signature reçue: %02X %02X %02X %02X %02X %02X %02X %02X\n",
+                  (uint8_t)imageData[0], (uint8_t)imageData[1], (uint8_t)imageData[2], (uint8_t)imageData[3],
+                  (uint8_t)imageData[4], (uint8_t)imageData[5], (uint8_t)imageData[6], (uint8_t)imageData[7]);
+    
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR IMAGE");
+    tft.setCursor(20, 130);
+    tft.println("PNG invalide");
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Convertir la String en buffer uint8_t pour PNGdec
+  uint8_t* imageBuffer = (uint8_t*)imageData.c_str();
+  
+  // Maintenant décoder et afficher l'image PNG
+  Serial.println("🖼️ Décodage PNG...");
+  
+  int result = pngGlobal.openRAM(imageBuffer, dataLength, pngDraw);
+  
+  if (result != PNG_SUCCESS) {
+    Serial.printf("❌ Erreur ouverture PNG: %d\n", result);
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR PNG");
+    tft.setCursor(20, 130);
+    tft.println("Code: " + String(result));
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  // Effacer la zone d'instructions
+  tft.fillRect(10, 225, 310, 15, TFT_BLACK);
+  
+  // Afficher "Affichage QR code..."
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(1);
+  tft.setCursor(10, 225);
+  tft.println("Affichage QR code...");
+  
+  // Préparer le fond noir pour le QR (150x150, centré en bas) - contraste optimal
+  tft.fillRect(globalQrX, globalQrY, 150, 150, TFT_BLACK);
+
+  // Décoder et afficher l'image (le PNG doit être centré sur qrX, qrY)
+  // PNGdec dessine à partir de pngDraw, il faut que pngDraw utilise qrX et qrY pour le placement
+  result = pngGlobal.decode(NULL, 0);
+  
+  if (result != PNG_SUCCESS) {
+    Serial.printf("❌ Erreur décodage PNG: %d\n", result);
+    pngGlobal.close();
+    tft.setTextColor(TFT_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println("ERREUR DECODE");
+    tft.setCursor(20, 130);
+    tft.println("Code: " + String(result));
+    delay(3000);
+    showWalletScreen();
+    return;
+  }
+  
+  pngGlobal.close();
+  // Note: imageBuffer pointe vers imageData.c_str(), pas besoin de free()
+  
+  Serial.println("✅ QR code affiché!");
+  
+  // Libérer explicitement la mémoire de l'image PNG pour éviter les fuites RAM
+  imageData = ""; // Vider la String pour libérer la RAM
+  Serial.println("🧹 Mémoire PNG libérée");
+  
+  // Effacer les messages temporaires
+  tft.fillRect(20, 35, 280, 40, TFT_BLACK);
+  
+  // Instructions finales (supprimées pour laisser le QR respirer)
+  // tft.setTextColor(TFT_WHITE);
+  // tft.setTextSize(1);
+  // tft.setCursor(10, 225);
+  // tft.println("Scannez avec wallet Lightning");
+  // tft.setCursor(10, 235);
+  // tft.print("Montant: ");
+  // tft.print(deposit_amount_sats);
+  // tft.println(" sats");
+  
+  Serial.println("✅ Écran dépôt avec QR code affiché");
+  
+  // Attendre 2 minutes puis retour auto (suffisant pour permettre le scan)
+  unsigned long startTime = millis();
+  while (millis() - startTime < 120000) { // 2 minutes = 120 secondes
+    delay(100); // Petit délai pour éviter de bloquer complètement
+    
+    // Vérifier si l'utilisateur touche l'écran pour annuler
+    uint16_t touchX, touchY;
+    if (tft.getTouch(&touchX, &touchY)) {
+      Serial.println("👆 Touch détecté - retour anticipé");
+      break; // Sortir de la boucle d'attente
+    }
+  }
+  
+  // Timeout
+  Serial.println("⏰ Timeout écran dépôt, retour auto");
+  showWalletScreen();
 }
