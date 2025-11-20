@@ -196,7 +196,7 @@ void fadeOut(int duration = 150) {
 
 // ===== PROTOTYPES FONCTIONS =====
 void loadConfig();
-void saveConfig();
+bool saveConfig();
 void startConfigPortal();
 void handleRoot();
 void handleSave();
@@ -337,11 +337,11 @@ String xorDecrypt(String data) {
 }
 String encryptData(const char* plaintext, size_t plaintextLen) {
   // Utiliser des buffers statiques pour éviter les allocations dynamiques
-  static uint8_t paddedPlaintext[512]; // Buffer statique de 512 octets max
-  static uint8_t encrypted[512];       // Buffer statique de 512 octets max
+  static uint8_t paddedPlaintext[256]; // Buffer statique réduit à 256 octets
+  static uint8_t encrypted[256];       // Buffer statique réduit à 256 octets
 
   // Vérifier que les données ne dépassent pas la taille maximale
-  if (plaintextLen > 400) { // Laisser de la marge pour le padding
+  if (plaintextLen > 200) { // Laisser de la marge pour le padding
     Serial.println("ERREUR: Données trop longues pour chiffrement");
     return "";
   }
@@ -393,8 +393,8 @@ String encryptData(const char* plaintext, size_t plaintextLen) {
 // Decrypt data using AES-256 (version optimisée pour ESP32)
 String decryptData(const char* ciphertext, size_t ciphertextLen) {
   // Utiliser des buffers statiques pour éviter les allocations dynamiques
-  static uint8_t encrypted[512];  // Buffer pour les données décodées base64
-  static uint8_t decrypted[512];  // Buffer pour les données déchiffrées
+  static uint8_t encrypted[256];  // Buffer pour les données décodées base64
+  static uint8_t decrypted[256];  // Buffer pour les données déchiffrées
 
   uint8_t key[32];
   deriveEncryptionKey(key, sizeof(key));
@@ -411,7 +411,7 @@ String decryptData(const char* ciphertext, size_t ciphertextLen) {
     return "";
   }
 
-  if (encryptedLen > 400) { // Vérifier la taille maximale
+  if (encryptedLen > 200) { // Vérifier la taille maximale
     Serial.println("ERREUR: Données déchiffrées trop longues");
     return "";
   }
@@ -644,12 +644,49 @@ void setup() {
   Serial.println("Chargement config...");
   loadConfig();
   
-  // Si pas de config → Mode AP
-  if (ssid_saved == "" || api_key == "") {
-    Serial.println("Pas de config → Mode AP");
+  // Vérifier si on doit démarrer en mode AP
+  bool shouldStartAP = false;
+  
+  // Condition 1: Pas de SSID configuré
+  if (ssid_saved == "") {
+    Serial.println("❌ Pas de SSID configuré → Mode AP");
+    shouldStartAP = true;
+  }
+  // Condition 2: SSID configuré mais pas de mot de passe
+  else if (password_saved == "") {
+    Serial.println("❌ SSID configuré mais pas de mot de passe → Mode AP");
+    shouldStartAP = true;
+  }
+  // Condition 3: Tentative de connexion WiFi échoue (timeout)
+  else {
+    Serial.println("🔄 Tentative de connexion WiFi rapide...");
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid_saved.c_str(), password_saved.c_str());
+    
+    // Attendre max 5 secondes pour la connexion
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 10) {
+      delay(500);
+      Serial.print(".");
+      attempts++;
+    }
+    Serial.println();
+    
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("✅ WiFi connecté rapidement - mode normal");
+      // Continuer en mode normal
+    } else {
+      Serial.println("❌ Échec connexion WiFi rapide → Mode AP");
+      shouldStartAP = true;
+      WiFi.disconnect(); // Déconnecter pour éviter conflits
+    }
+  }
+  
+  if (shouldStartAP) {
+    Serial.println("🚀 Démarrage mode AP");
     startConfigPortal();
   } else {
-    Serial.println("Config trouvée → Connexion");
+    Serial.println("🔗 Config trouvée → Connexion WiFi complète");
     connectWiFi();
   }
 }
@@ -685,196 +722,346 @@ void loop() {
 // CONFIG SPIFFS
 // =====================================================
 void loadConfig() {
-  Serial.println("Vérification fichier config.json...");
-  if (!SPIFFS.exists("/config.json")) {
-    Serial.println("Pas de fichier config.json");
+  Serial.println("🔍 [LOADCONFIG] Début chargement configuration...");
+
+  // 1. Vérifier existence du fichier
+  Serial.println("📁 [LOADCONFIG] Vérification existence /config.json...");
+  bool fileExists = SPIFFS.exists("/config.json");
+  Serial.print("📁 [LOADCONFIG] Fichier existe: ");
+  Serial.println(fileExists ? "OUI" : "NON");
+
+  if (!fileExists) {
+    Serial.println("❌ [LOADCONFIG] Fichier config.json introuvable - mode AP activé");
     return;
   }
-  
-  Serial.println("Ouverture config.json...");
+
+  // 2. Ouvrir le fichier
+  Serial.println("📖 [LOADCONFIG] Ouverture du fichier /config.json...");
   fs::File file = SPIFFS.open("/config.json", "r");
-  if (!file) {
-    Serial.println("Erreur ouverture config.json");
+  bool fileOpened = file;
+  Serial.print("📖 [LOADCONFIG] Fichier ouvert: ");
+  Serial.println(fileOpened ? "OUI" : "NON");
+
+  if (!fileOpened) {
+    Serial.println("❌ [LOADCONFIG] Impossible d'ouvrir config.json - mode AP activé");
     return;
   }
-  
-  Serial.println("Parsing JSON...");
-  JsonDocument doc;
-  DeserializationError error = deserializeJson(doc, file);
+
+  // 3. Lire le contenu brut
+  Serial.println("📄 [LOADCONFIG] Lecture contenu brut...");
+  String rawContent = file.readString();
+  Serial.print("📄 [LOADCONFIG] Contenu brut (");
+  Serial.print(rawContent.length());
+  Serial.println(" caractères):");
+  Serial.println("--- DÉBUT CONTENU ---");
+  Serial.println(rawContent);
+  Serial.println("--- FIN CONTENU ---");
+
+  // 4. Parser JSON
+  Serial.println("🔧 [LOADCONFIG] Parsing JSON...");
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, rawContent);
   file.close();
-  
+
+  Serial.print("🔧 [LOADCONFIG] Erreur parsing: ");
   if (error) {
-    Serial.println("Erreur JSON parsing");
+    Serial.println("OUI - " + String(error.c_str()));
+    Serial.println("❌ [LOADCONFIG] Échec parsing JSON - mode AP activé");
     return;
+  } else {
+    Serial.println("NON - Parsing réussi");
   }
-  
+
+  // 5. Extraire les valeurs de base
+  Serial.println("📋 [LOADCONFIG] Extraction valeurs de base...");
   ssid_saved = doc["ssid"].as<String>();
   password_saved = doc["password"].as<String>();
-  
-  // Charger et déchiffrer les clés API
+  Serial.print("📋 [LOADCONFIG] SSID: '");
+  Serial.print(ssid_saved);
+  Serial.println("'");
+  Serial.print("📋 [LOADCONFIG] Password: '");
+  Serial.print(password_saved.length() > 0 ? "[PRÉSENT]" : "[VIDE]");
+  Serial.println("'");
+
+  // 6. Charger et déchiffrer les clés API
+  Serial.println("🔐 [LOADCONFIG] Traitement clés API...");
   String encrypted_api_key = doc["api_key"].as<String>();
   String encrypted_api_secret = doc["api_secret"].as<String>();
   String encrypted_api_passphrase = doc["api_passphrase"].as<String>();
-  
-  // Si les clés sont chiffrées (commencent par "XOR:"), les déchiffrer
+
+  Serial.print("🔐 [LOADCONFIG] Clé API chiffrée: '");
+  Serial.print(encrypted_api_key);
+  Serial.println("'");
+  Serial.print("🔐 [LOADCONFIG] Secret API chiffré: '");
+  Serial.print(encrypted_api_secret.length() > 0 ? "[PRÉSENT]" : "[VIDE]");
+  Serial.println("'");
+  Serial.print("🔐 [LOADCONFIG] Passphrase chiffrée: '");
+  Serial.print(encrypted_api_passphrase.length() > 0 ? "[PRÉSENT]" : "[VIDE]");
+  Serial.println("'");
+
+  // Traitement API Key
   if (encrypted_api_key.startsWith("XOR:")) {
-    Serial.println("🔓 Déchiffrement XOR des clés API...");
-    String encrypted_data = encrypted_api_key.substring(4); // Enlever "XOR:"
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement XOR API key...");
+    String encrypted_data = encrypted_api_key.substring(4);
+    Serial.print("🔓 [LOADCONFIG] Données chiffrées: '");
+    Serial.print(encrypted_data);
+    Serial.println("'");
     String decrypted = xorDecrypt(encrypted_data);
-    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+    Serial.print("🔓 [LOADCONFIG] Données déchiffrées: '");
+    Serial.print(decrypted);
+    Serial.println("'");
+
+    bool isValid = (decrypted != "" && validateApiKey(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_key = decrypted;
-      Serial.println("✅ Clé API XOR validée");
+      Serial.println("✅ [LOADCONFIG] Clé API XOR validée et assignée");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation XOR API key - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation XOR API key - mode public");
       api_key = "public";
     }
   } else if (encrypted_api_key.startsWith("ENC:")) {
-    // Support legacy AES encryption
-    Serial.println("🔓 Déchiffrement AES legacy des clés API...");
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement AES legacy API key...");
     String encrypted_data = encrypted_api_key.substring(4);
     String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
-    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+    bool isValid = (decrypted != "" && validateApiKey(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation AES: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_key = decrypted;
-      Serial.println("✅ Clé API AES legacy validée");
+      Serial.println("✅ [LOADCONFIG] Clé API AES legacy validée");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation AES legacy API key - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation AES legacy API key - mode public");
       api_key = "public";
     }
   } else {
-    // Clé non chiffrée (ancienne config ou mode public)
-    if (encrypted_api_key != "" && encrypted_api_key != "public" && validateApiKey(encrypted_api_key)) {
+    Serial.println("🔓 [LOADCONFIG] Clé API non chiffrée détectée");
+    bool isValid = (encrypted_api_key != "" && encrypted_api_key != "public" && validateApiKey(encrypted_api_key));
+    Serial.print("🔓 [LOADCONFIG] Validation clé brute: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_key = encrypted_api_key;
+      Serial.println("✅ [LOADCONFIG] Clé API brute validée");
     } else {
+      Serial.println("❌ [LOADCONFIG] Clé API brute invalide - mode public");
       api_key = "public";
     }
   }
-  
+
+  // Traitement API Secret
   if (encrypted_api_secret.startsWith("XOR:")) {
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement XOR API secret...");
     String encrypted_data = encrypted_api_secret.substring(4);
     String decrypted = xorDecrypt(encrypted_data);
-    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+    bool isValid = (decrypted != "" && validateApiKey(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation secret XOR: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_secret = decrypted;
-      Serial.println("✅ Secret API XOR validé");
+      Serial.println("✅ [LOADCONFIG] Secret API XOR validé");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation XOR API secret - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation XOR API secret - mode public");
       api_secret = "public";
     }
   } else if (encrypted_api_secret.startsWith("ENC:")) {
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement AES legacy API secret...");
     String encrypted_data = encrypted_api_secret.substring(4);
     String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
-    if (decrypted != "" && validateApiKey(decrypted)) { // Validation ajoutée
+    bool isValid = (decrypted != "" && validateApiKey(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation secret AES: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_secret = decrypted;
-      Serial.println("✅ Secret API AES legacy validé");
+      Serial.println("✅ [LOADCONFIG] Secret API AES legacy validé");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation AES legacy API secret - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation AES legacy API secret - mode public");
       api_secret = "public";
     }
   } else {
-    if (encrypted_api_secret != "" && encrypted_api_secret != "public" && validateApiKey(encrypted_api_secret)) {
+    Serial.println("🔓 [LOADCONFIG] Secret API non chiffré détecté");
+    bool isValid = (encrypted_api_secret != "" && encrypted_api_secret != "public" && validateApiKey(encrypted_api_secret));
+    Serial.print("🔓 [LOADCONFIG] Validation secret brut: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_secret = encrypted_api_secret;
+      Serial.println("✅ [LOADCONFIG] Secret API brut validé");
     } else {
+      Serial.println("❌ [LOADCONFIG] Secret API brut invalide - mode public");
       api_secret = "public";
     }
   }
-  
+
+  // Traitement API Passphrase
   if (encrypted_api_passphrase.startsWith("XOR:")) {
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement XOR API passphrase...");
     String encrypted_data = encrypted_api_passphrase.substring(4);
     String decrypted = xorDecrypt(encrypted_data);
-    if (decrypted != "" && validatePassphrase(decrypted)) { // Validation ajoutée
+    bool isValid = (decrypted != "" && validatePassphrase(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation passphrase XOR: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_passphrase = decrypted;
-      Serial.println("✅ Passphrase API XOR validée");
+      Serial.println("✅ [LOADCONFIG] Passphrase API XOR validée");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation XOR API passphrase - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation XOR API passphrase - mode public");
       api_passphrase = "public";
     }
   } else if (encrypted_api_passphrase.startsWith("ENC:")) {
+    Serial.println("🔓 [LOADCONFIG] Déchiffrement AES legacy API passphrase...");
     String encrypted_data = encrypted_api_passphrase.substring(4);
     String decrypted = decryptData(encrypted_data.c_str(), encrypted_data.length());
-    if (decrypted != "" && validatePassphrase(decrypted)) { // Validation ajoutée
+    bool isValid = (decrypted != "" && validatePassphrase(decrypted));
+    Serial.print("🔓 [LOADCONFIG] Validation passphrase AES: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_passphrase = decrypted;
-      Serial.println("✅ Passphrase API AES legacy validée");
+      Serial.println("✅ [LOADCONFIG] Passphrase API AES legacy validée");
     } else {
-      Serial.println("❌ Échec déchiffrement/validation AES legacy API passphrase - utilisation mode public");
+      Serial.println("❌ [LOADCONFIG] Échec déchiffrement/validation AES legacy API passphrase - mode public");
       api_passphrase = "public";
     }
   } else {
-    if (encrypted_api_passphrase != "" && encrypted_api_passphrase != "public" && validatePassphrase(encrypted_api_passphrase)) {
+    Serial.println("🔓 [LOADCONFIG] Passphrase API non chiffrée détectée");
+    bool isValid = (encrypted_api_passphrase != "" && encrypted_api_passphrase != "public" && validatePassphrase(encrypted_api_passphrase));
+    Serial.print("🔓 [LOADCONFIG] Validation passphrase brute: ");
+    Serial.println(isValid ? "RÉUSSIE" : "ÉCHEC");
+
+    if (isValid) {
       api_passphrase = encrypted_api_passphrase;
+      Serial.println("✅ [LOADCONFIG] Passphrase API brute validée");
     } else {
+      Serial.println("❌ [LOADCONFIG] Passphrase API brute invalide - mode public");
       api_passphrase = "public";
     }
   }
-  
+
+  // 7. Adresses Lightning
+  Serial.println("⚡ [LOADCONFIG] Extraction adresses Lightning...");
   lightning_address = doc["lightning_address"].as<String>();
   deposit_lnaddress = doc["deposit_lnaddress"].as<String>();
-  
-  Serial.println("Config chargée:");
-  Serial.println("  SSID: " + ssid_saved);
+  Serial.print("⚡ [LOADCONFIG] Lightning Address: '");
+  Serial.print(lightning_address);
+  Serial.println("'");
+  Serial.print("⚡ [LOADCONFIG] Deposit LN Address: '");
+  Serial.print(deposit_lnaddress);
+  Serial.println("'");
+
+  // 8. Résumé final
+  Serial.println("✅ [LOADCONFIG] Configuration chargée avec succès:");
+  Serial.println("   📶 SSID: " + ssid_saved);
+  Serial.print("   🔑 API Key: ");
   if (api_key != "" && api_key != "public") {
-    Serial.println("  API Key: " + api_key.substring(0, 10) + "...");
+    Serial.println(api_key.substring(0, 10) + "...");
+  } else {
+    Serial.println("[MODE PUBLIC]");
   }
+  Serial.print("   🔐 API Secret: ");
+  Serial.println(api_secret != "public" ? "[CONFIGURÉ]" : "[MODE PUBLIC]");
+  Serial.print("   🔒 API Passphrase: ");
+  Serial.println(api_passphrase != "public" ? "[CONFIGURÉ]" : "[MODE PUBLIC]");
   if (lightning_address != "") {
-    Serial.println("  Lightning Address: " + lightning_address);
+    Serial.println("   ⚡ Lightning Address: " + lightning_address);
   }
+  if (deposit_lnaddress != "") {
+    Serial.println("   📥 Deposit LN Address: " + deposit_lnaddress);
+  }
+  Serial.println("✅ [LOADCONFIG] Chargement terminé - prêt pour connexion WiFi");
 }
 
-void saveConfig() {
-  JsonDocument doc;
+bool saveConfig() {
+  Serial.println("💾 [SAVECONFIG] saveConfig() appelée - début sauvegarde");
+  
+  StaticJsonDocument<256> doc;
+  Serial.println("💾 [SAVECONFIG] Création document JSON...");
+  
   doc["ssid"] = ssid_saved;
   doc["password"] = password_saved;
+  Serial.println("💾 [SAVECONFIG] WiFi ajouté: SSID='" + ssid_saved + "'");
   
   // Chiffrer les clés API avant sauvegarde
   if (api_key != "" && api_key != "public") {
-    Serial.println("🔐 Chiffrement XOR API key...");
+    Serial.println("🔐 [SAVECONFIG] Chiffrement XOR API key...");
     String encrypted = xorEncrypt(api_key);
     if (encrypted != "") {
       doc["api_key"] = String("XOR:") + encrypted;
+      Serial.println("✅ [SAVECONFIG] API key chiffrée et ajoutée");
     } else {
-      Serial.println("❌ Échec chiffrement XOR API key");
+      Serial.println("❌ [SAVECONFIG] Échec chiffrement XOR API key");
       doc["api_key"] = "public";
     }
   } else {
     doc["api_key"] = api_key;
+    Serial.println("💾 [SAVECONFIG] API key ajoutée (non chiffrée)");
   }
   
   if (api_secret != "" && api_secret != "public") {
-    Serial.println("🔐 Chiffrement XOR API secret...");
+    Serial.println("🔐 [SAVECONFIG] Chiffrement XOR API secret...");
     String encrypted = xorEncrypt(api_secret);
     if (encrypted != "") {
       doc["api_secret"] = String("XOR:") + encrypted;
+      Serial.println("✅ [SAVECONFIG] API secret chiffré et ajouté");
     } else {
-      Serial.println("❌ Échec chiffrement XOR API secret");
+      Serial.println("❌ [SAVECONFIG] Échec chiffrement XOR API secret");
       doc["api_secret"] = "public";
     }
   } else {
     doc["api_secret"] = api_secret;
+    Serial.println("💾 [SAVECONFIG] API secret ajouté (non chiffré)");
   }
   
   if (api_passphrase != "" && api_passphrase != "public") {
-    Serial.println("🔐 Chiffrement XOR API passphrase...");
+    Serial.println("🔐 [SAVECONFIG] Chiffrement XOR API passphrase...");
     String encrypted = xorEncrypt(api_passphrase);
     if (encrypted != "") {
       doc["api_passphrase"] = String("XOR:") + encrypted;
+      Serial.println("✅ [SAVECONFIG] API passphrase chiffrée et ajoutée");
     } else {
-      Serial.println("❌ Échec chiffrement XOR API passphrase");
+      Serial.println("❌ [SAVECONFIG] Échec chiffrement XOR API passphrase");
       doc["api_passphrase"] = "public";
     }
   } else {
     doc["api_passphrase"] = api_passphrase;
+    Serial.println("💾 [SAVECONFIG] API passphrase ajoutée (non chiffrée)");
   }
   
   doc["lightning_address"] = lightning_address;
   doc["deposit_lnaddress"] = deposit_lnaddress;
+  Serial.println("💾 [SAVECONFIG] Adresses Lightning ajoutées");
   
+  Serial.println("💾 [SAVECONFIG] Ouverture fichier /config.json en écriture...");
   fs::File file = SPIFFS.open("/config.json", "w");
-  if (!file) {
-    Serial.println("Erreur sauvegarde config");
-    return;
+  bool fileOpened = file;
+  Serial.print("💾 [SAVECONFIG] Fichier ouvert: ");
+  Serial.println(fileOpened ? "OUI" : "NON");
+  
+  if (!fileOpened) {
+    Serial.println("❌ [SAVECONFIG] Erreur ouverture config.json en écriture");
+    return false;
   }
   
-  serializeJson(doc, file);
+  Serial.println("💾 [SAVECONFIG] Sérialisation JSON...");
+  size_t bytesWritten = serializeJson(doc, file);
+  Serial.print("💾 [SAVECONFIG] Bytes écrits: ");
+  Serial.println(bytesWritten);
+  
+  if (bytesWritten == 0) {
+    Serial.println("❌ [SAVECONFIG] Échec sérialisation JSON - aucun byte écrit");
+    file.close();
+    return false;
+  }
+  
   file.close();
-  Serial.println("Config sauvegardée ✓");
+  Serial.println("✅ [SAVECONFIG] Fichier fermé - sauvegarde terminée");
+  return true;
 }
 
 // =====================================================
@@ -922,12 +1109,32 @@ void startConfigPortal() {
   
   // Routes web
   server.on("/", handleRoot);
-  server.on("/save", handleSave);
+  server.on("/save", []() {
+    Serial.println("📨 [SERVER] /save requested, method: " + String(server.method()));
+    if (server.method() == HTTP_POST) {
+      Serial.println("📨 [SERVER] Handling POST /save");
+      handleSave();
+    } else {
+      Serial.println("📨 [SERVER] Redirecting non-POST /save to /");
+      server.sendHeader("Location", "/", true);
+      server.send(302, "text/plain", "");
+    }
+  });
   server.on("/favicon.ico", []() { server.send(204); }); // No content
+  
+  // Captive portal detection URLs - return 204 (No Content) to indicate captive portal
   server.on("/generate_204", []() { server.send(204); }); // Android captive portal
   server.on("/hotspot-detect.html", []() { server.send(204); }); // iOS captive portal
   server.on("/connecttest.txt", []() { server.send(200, "text/plain", "Microsoft Connect Test"); }); // Windows captive portal
-  server.onNotFound([]() { server.sendHeader("Location", "/", true); server.send(302, "text/plain", ""); }); // Redirect all other requests to root
+  server.on("/connectivitycheck.gstatic.com/generate_204", []() { server.send(204); }); // Android full URL
+  server.on("/captive.apple.com/hotspot-detect.html", []() { server.send(204); }); // iOS full URL
+  server.on("/www.msftconnecttest.com/connecttest.txt", []() { server.send(200, "text/plain", "Microsoft Connect Test"); }); // Windows full URL
+  
+  // For all other requests, serve the portal page directly (not redirect)
+  server.onNotFound([]() { 
+    Serial.println("❓ [SERVER] Request not found: " + server.uri() + " method: " + String(server.method()));
+    handleRoot(); 
+  }); // Serve portal page for all unmatched requests
   
   server.begin();
   
@@ -936,6 +1143,8 @@ void startConfigPortal() {
 }
 
 void handleRoot() {
+  Serial.println("🌐 [HANDLEROOT] handleRoot() appelée - envoi page config");
+  
   String html = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -944,106 +1153,40 @@ void handleRoot() {
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <title>LN Markets Config</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: Arial, sans-serif;
-      background: #0a0a0a;
-      color: #00ffff;
-      padding: 20px;
-    }
-    .container {
-      max-width: 400px;
-      margin: 0 auto;
-      background: #1a1a1a;
-      padding: 30px;
-      border-radius: 10px;
-      border: 2px solid #ff0040;
-    }
-    h1 {
-      color: #ff0040;
-      text-align: center;
-      margin-bottom: 30px;
-      font-size: 24px;
-    }
-    label {
-      display: block;
-      margin: 20px 0 8px 0;
-      color: #00ffff;
-      font-weight: bold;
-    }
-    input {
-      width: 100%;
-      padding: 12px;
-      background: #0a0a0a;
-      border: 2px solid #00ffff;
-      color: #fff;
-      font-size: 16px;
-      border-radius: 5px;
-    }
-    input:focus {
-      outline: none;
-      border-color: #ff0040;
-    }
-    button {
-      width: 100%;
-      padding: 15px;
-      margin-top: 30px;
-      background: #ff0040;
-      border: none;
-      color: #fff;
-      font-size: 18px;
-      font-weight: bold;
-      border-radius: 5px;
-      cursor: pointer;
-    }
-    button:hover {
-      background: #cc0033;
-    }
-    .info {
-      margin-top: 20px;
-      padding: 10px;
-      background: #0a0a0a;
-      border-left: 3px solid #00ffff;
-      font-size: 12px;
-    }
+    body { font-family: Arial; background: #0a0a0a; color: #00ffff; padding: 20px; }
+    .container { max-width: 400px; margin: 0 auto; background: #1a1a1a; padding: 30px; border-radius: 10px; border: 2px solid #ff0040; }
+    h1 { color: #ff0040; text-align: center; margin-bottom: 30px; font-size: 24px; }
+    label { display: block; margin: 20px 0 8px 0; color: #00ffff; font-weight: bold; }
+    input { width: 100%; padding: 12px; background: #0a0a0a; border: 2px solid #00ffff; color: #fff; border-radius: 5px; }
+    input:focus { outline: none; border-color: #ff0040; }
+    button { width: 100%; padding: 15px; margin-top: 30px; background: #ff0040; border: none; color: #fff; font-size: 18px; font-weight: bold; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #cc0033; }
+    .info { margin-top: 20px; padding: 10px; background: #0a0a0a; border-left: 3px solid #00ffff; font-size: 12px; }
   </style>
 </head>
 <body>
   <div class='container'>
     <h1>⚡ LN MARKETS TOUCH</h1>
     <form action='/save' method='POST'>
-      
       <label>WiFi SSID</label>
       <input type='text' name='ssid' placeholder='Ton WiFi' required>
-      
       <label>WiFi Password</label>
       <input type='password' name='password' placeholder='Mot de passe' required>
-      
       <label>LN Markets API Key</label>
       <input type='text' name='api_key' placeholder='Clé API base64 (optionnel)'>
-      
       <label>LN Markets API Secret</label>
       <input type='password' name='api_secret' placeholder='Secret (optionnel)'>
-      
       <label>LN Markets Passphrase</label>
       <input type='password' name='api_passphrase' placeholder='Passphrase (optionnel)'>
-      
       <label>Lightning Address</label>
       <input type='text' name='lightning_address' placeholder='silex@lnbits.com (optionnel)'>
-      
       <label>Deposit LN Address</label>
       <input type='text' name='deposit_lnaddress' placeholder='silex@lnbits.com (optionnel)'>
-      
       <button type='submit'>💾 SAUVEGARDER</button>
     </form>
-    
     <div class='info'>
-      ℹ️ API Keys disponibles sur:<br>
-      lnmarkets.com → Settings → API<br>
-      <br>
-      ⚡ Lightning Address: Format user@domain.com<br>
-      (ex: silex@lnbits.com, satoshi@lnmarkets.com)<br>
-      Utilisé pour les retraits vers votre wallet Lightning
+      ℹ️ API Keys sur lnmarkets.com → Settings → API<br>
+      ⚡ Lightning Address: Format user@domain.com
     </div>
   </div>
 </body>
@@ -1054,6 +1197,55 @@ void handleRoot() {
 }
 
 void handleSave() {
+  Serial.println("\n🔥🔥🔥 === HANDLESAVE APPELÉ === 🔥🔥🔥");
+  Serial.println("Méthode: " + String(server.method() == HTTP_POST ? "POST" : "GET"));
+  Serial.println("Nombre d'arguments: " + String(server.args()));
+  
+  Serial.println("🔥🔥🔥 HANDLESAVE APPELÉ 🔥🔥🔥");
+  Serial.println("Méthode HTTP: " + String(server.method()));
+  Serial.println("Nombre args: " + String(server.args()));
+  
+  Serial.println("💾 [HANDLESAVE] handleSave() appelée - début traitement sauvegarde");
+  Serial.println("🔍 [HANDLESAVE] Vérification arguments serveur...");
+  
+  // Vérifier si des arguments sont reçus
+  if (server.args() == 0) {
+    Serial.println("❌ [HANDLESAVE] AUCUN argument reçu du formulaire!");
+    String html = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta http-equiv='refresh' content='3;url=/'>
+  <style>
+    body {
+      font-family: Arial;
+      background: #0a0a0a;
+      color: #ff0040;
+      text-align: center;
+      padding: 50px;
+    }
+    h1 { font-size: 48px; margin-bottom: 20px; }
+    p { font-size: 18px; }
+  </style>
+</head>
+<body>
+  <h1>❌ ERREUR</h1>
+  <p>Aucun argument reçu du formulaire</p>
+  <p>Retour automatique dans 3s...</p>
+</body>
+</html>
+  )rawliteral";
+    
+    server.send(400, "text/html", html);
+    Serial.println("📤 [HANDLESAVE] Réponse d'erreur envoyée (pas d'args)");
+    return;
+  }
+  
+  Serial.print("✅ [HANDLESAVE] ");
+  Serial.print(server.args());
+  Serial.println(" arguments reçus");
+  
   String raw_ssid = server.arg("ssid");
   String raw_password = server.arg("password");
   String raw_api_key = server.arg("api_key");
@@ -1061,6 +1253,15 @@ void handleSave() {
   String raw_api_passphrase = server.arg("api_passphrase");
   String raw_lightning_address = server.arg("lightning_address");
   String raw_deposit_lnaddress = server.arg("deposit_lnaddress");
+  
+  Serial.println("📝 [HANDLESAVE] Données reçues:");
+  Serial.println("  SSID: " + raw_ssid);
+  Serial.println("  Password: " + String(raw_password.length() > 0 ? "[MASQUÉ]" : "[VIDE]"));
+  Serial.println("  API Key: " + String(raw_api_key.length() > 0 ? "[PRÉSENT]" : "[VIDE]"));
+  Serial.println("  API Secret: " + String(raw_api_secret.length() > 0 ? "[PRÉSENT]" : "[VIDE]"));
+  Serial.println("  API Passphrase: " + String(raw_api_passphrase.length() > 0 ? "[PRÉSENT]" : "[VIDE]"));
+  Serial.println("  Lightning Address: " + raw_lightning_address);
+  Serial.println("  Deposit LN Address: " + raw_deposit_lnaddress);
   
   // Validation des entrées
   String validationError = "";
@@ -1099,7 +1300,7 @@ void handleSave() {
   
   // Si erreur de validation, retourner une page d'erreur
   if (validationError != "") {
-    Serial.println("❌ Erreur de validation: " + validationError);
+    Serial.println("❌ [HANDLESAVE] Erreur de validation: " + validationError);
     
     String html = R"rawliteral(
 <!DOCTYPE html>
@@ -1128,10 +1329,12 @@ void handleSave() {
   )rawliteral";
     
     server.send(400, "text/html", html);
+    Serial.println("📤 [HANDLESAVE] Réponse d'erreur envoyée");
     return;
   }
   
   // Assigner les valeurs validées aux variables globales
+  Serial.println("✅ [HANDLESAVE] Assignation des valeurs aux variables globales...");
   ssid_saved = raw_ssid;
   password_saved = raw_password;
   api_key = raw_api_key;
@@ -1145,19 +1348,37 @@ void handleSave() {
   if (api_secret == "") api_secret = "public";
   if (api_passphrase == "") api_passphrase = "public";
   
-  Serial.println("Config reçue:");
+  Serial.println("\n📝 === DONNÉES REÇUES ===");
   Serial.println("  SSID: " + ssid_saved);
-  if (api_key != "public") {
-    Serial.println("  API Key: " + api_key.substring(0, 10) + "...");
-  }
-  if (lightning_address != "") {
-    Serial.println("  Lightning Address: " + lightning_address);
-  }
-  if (deposit_lnaddress != "") {
-    Serial.println("  Deposit LN Address: " + deposit_lnaddress);
+  Serial.println("  Password: " + String(password_saved.length() > 0 ? "***" : "VIDE"));
+  Serial.println("  API Key: " + (api_key != "public" ? api_key.substring(0, 10) + "..." : "public"));
+
+  Serial.println("\n💾 Appel saveConfig()...");
+  saveConfig();
+  Serial.println("✅ saveConfig() terminé");
+  
+  // Vérifier immédiatement que le fichier a été créé
+  Serial.println("🔍 [HANDLESAVE] Vérification fichier sauvegardé...");
+  if (SPIFFS.exists("/config.json")) {
+    Serial.println("✅ [HANDLESAVE] Fichier /config.json existe");
+    
+    // Lire et afficher le contenu sauvegardé
+    fs::File checkFile = SPIFFS.open("/config.json", "r");
+    if (checkFile) {
+      String savedContent = checkFile.readString();
+      checkFile.close();
+      Serial.println("📄 [HANDLESAVE] Contenu sauvegardé:");
+      Serial.println("--- DÉBUT CONTENU SAUVEGARDÉ ---");
+      Serial.println(savedContent);
+      Serial.println("--- FIN CONTENU SAUVEGARDÉ ---");
+    } else {
+      Serial.println("❌ [HANDLESAVE] Impossible de lire le fichier sauvegardé");
+    }
+  } else {
+    Serial.println("❌ [HANDLESAVE] Fichier /config.json n'existe pas après sauvegarde!");
   }
   
-  saveConfig();
+  Serial.println("📤 [HANDLESAVE] Envoi réponse HTML de succès...");
   
   String html = R"rawliteral(
 <!DOCTYPE html>
@@ -1185,13 +1406,28 @@ void handleSave() {
   )rawliteral";
   
   server.send(200, "text/html", html);
-  delay(3000);
+  Serial.println("📤 [HANDLESAVE] Réponse HTML envoyée");
+  
+  Serial.println("⏳ [HANDLESAVE] Attente 5 secondes pour SPIFFS...");
+  delay(5000); // Attendre que SPIFFS termine l'écriture
+  Serial.println("🔄 [HANDLESAVE] ESP.restart() appelé!");
   ESP.restart();
 }
 
 // =====================================================
-// CONNEXION WIFI
+// FORCE AP MODE (si connexion WiFi échoue)
 // =====================================================
+void forceAPMode() {
+  Serial.println("🔄 FORÇAGE MODE AP...");
+  
+  // Déconnecter WiFi
+  WiFi.disconnect();
+  WiFi.mode(WIFI_OFF);
+  delay(1000);
+  
+  // Démarrer AP
+  startConfigPortal();
+}
 void connectWiFi() {
   tft.fillScreen(COLOR_BG);
   tft.setTextColor(COLOR_CYAN);
@@ -1219,10 +1455,10 @@ void connectWiFi() {
     syncTime();
     testAPIConnection();
   } else {
-    showError("WiFi ECHEC!");
-    Serial.println("WiFi échec");
+    Serial.println("❌ WiFi échec - forçage mode AP");
+    showError("WiFi ECHEC! Mode AP...");
     delay(3000);
-    startConfigPortal();
+    forceAPMode(); // Forcer le mode AP au lieu de startConfigPortal()
   }
 }
 
@@ -1266,7 +1502,7 @@ void testAPIConnection() {
     xTaskCreatePinnedToCore(
       priceUpdateTask,      // Fonction de la tâche
       "PriceUpdate",        // Nom de la tâche
-      8192,                 // Taille de la pile (8KB) - augmenté pour éviter stack overflow
+      8192,                 // Taille de la pile (8KB) - remis à la taille originale pour éviter stack overflow
       NULL,                 // Paramètre
       1,                    // Priorité
       &price_update_task,   // Handle de la tâche
@@ -1276,10 +1512,10 @@ void testAPIConnection() {
     showMainScreen();
   } else {
     api_connected = false;
-    showError("API ERREUR: " + String(httpCode));
-    Serial.println("API échec");
+    Serial.println("❌ API échec - forçage mode AP");
+    showError("API ERREUR! Mode AP...");
     delay(5000);
-    startConfigPortal();
+    forceAPMode(); // Forcer le mode AP si l'API ne fonctionne pas
   }
 }
 
@@ -1465,7 +1701,7 @@ void updatePrice() {
     // Mettre à jour le cache
     updateCache(priceCache, payload);
     
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, payload);
     
     if (!error) {
@@ -1739,8 +1975,10 @@ void handleTouch() {
       current_screen = SCREEN_HOME;
       showMainScreen();
     } else if (x < 160) {
-      // Zone WALLET
+      // Zone WALLET - Rafraîchir immédiatement les données
       current_screen = SCREEN_WALLET;
+      Serial.println("🔄 WALLET: Rafraîchissement immédiat des données...");
+      updateWalletData(); // 🔄 Requête immédiate au clic
       showWalletScreen();
     } else if (x < 240) {
       // Zone POSITIONS
@@ -1993,7 +2231,7 @@ void executeTrade(String side, int margin) {
     Serial.println("Réponse trade: " + response);
     
     // Parser la réponse
-    JsonDocument doc;
+    StaticJsonDocument<512> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -2523,7 +2761,7 @@ void updateWalletData() {
     Serial.print("📨 Réponse /account: ");
     Serial.println(response.substring(0, 100) + "...");
     
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -2572,7 +2810,7 @@ void updateWalletData() {
     Serial.print("📨 Réponse trades/running: ");
     Serial.println(tradesResponse.substring(0, 100) + "...");
     
-    JsonDocument tradesDoc;
+    StaticJsonDocument<1024> tradesDoc;
     DeserializationError tradesError = deserializeJson(tradesDoc, tradesResponse);
     
     if (!tradesError && tradesDoc.is<JsonArray>()) {
@@ -2652,7 +2890,7 @@ void updateWalletData() {
   }
   
   if (openResponse != "") {
-    JsonDocument openDoc;
+    StaticJsonDocument<256> openDoc;
     DeserializationError openError = deserializeJson(openDoc, openResponse);
     
     if (!openError && openDoc.is<JsonArray>()) {
@@ -2697,7 +2935,7 @@ void updateWalletData() {
   }
   
   if (closedResponse != "") {
-    JsonDocument closedDoc;
+    StaticJsonDocument<512> closedDoc;
     DeserializationError closedError = deserializeJson(closedDoc, closedResponse);
     
     if (!closedError && closedDoc.is<JsonArray>()) {
@@ -2766,7 +3004,7 @@ void cancelOrder(String orderId) {
     Serial.println("Réponse cancel: " + response);
     
     // Parser la réponse
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -2832,7 +3070,7 @@ void closeTrade(String positionId) {
   if (response != "") {
     Serial.println("Réponse close: " + response);
     
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -3129,7 +3367,7 @@ String getPayUrl(String lnurl) {
   }
   
   // Parser la réponse JSON
-  JsonDocument doc;
+  StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, response);
   
   if (error) {
@@ -3180,7 +3418,7 @@ String generateInvoice(String payUrl, long amount_sats) {
   }
   
   // Parser la réponse JSON
-  JsonDocument doc;
+  StaticJsonDocument<256> doc;
   DeserializationError error = deserializeJson(doc, response);
   
   if (error) {
@@ -3303,7 +3541,7 @@ void withdrawBalance() {
     Serial.println("Réponse withdraw: " + response);
     
     // Parser la réponse
-    JsonDocument doc;
+    StaticJsonDocument<256> doc;
     DeserializationError error = deserializeJson(doc, response);
     
     if (!error) {
@@ -3460,7 +3698,7 @@ void getDepositHistory() {
   Serial.println("Réponse deposits history: " + response.substring(0, 200) + "...");
 
   // Parser la réponse JSON
-  JsonDocument doc;
+  StaticJsonDocument<512> doc;
   DeserializationError error = deserializeJson(doc, response);
 
   if (error) {

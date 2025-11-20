@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LN Markets Touch - User Manual v0.1</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            color: #2E86AB;
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            color: #A23B72;
+            border-bottom: 3px solid #A23B72;
+            padding-bottom: 10px;
+            margin-top: 40px;
+            font-size: 1.8em;
+        }
+
+        h3 {
+            color: #F18F01;
+            margin-top: 30px;
+            font-size: 1.4em;
+        }
+
+        p {
+            margin: 15px 0;
+            font-size: 1.1em;
+        }
+
+        strong {
+            color: #2E86AB;
+            font-weight: bold;
+        }
+
+        em {
+            color: #A23B72;
+            font-style: italic;
+        }
+
+        .warning {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .warning strong {
+            color: #856404;
+        }
+
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 30px;
+        }
+
+        li {
+            margin: 8px 0;
+        }
+
+        .code {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-family: 'Courier New', monospace;
+            color: #495057;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        hr {
+            border: none;
+            height: 2px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            margin: 40px 0;
+        }
+
+        @media print {
+            body {
+                background: white;
+                max-width: none;
+                margin: 0;
+                padding: 20px;
+            }
+
+            .container {
+                box-shadow: none;
+                margin: 0;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>LN Markets Touch - User Manual</h1>
+        <h2>Version 0.1 - Trading Terminal</h2>
+
+        <hr>
+
+        <h2>🚀 QUICK START GUIDE</h2>
+
+        <h3>⚠️ IMPORTANT: LN MARKETS ACCOUNT SETUP (Do this FIRST!)</h3>
+
+        <div class="warning">
+            <strong>Before configuring the device, you MUST create an LN Markets account and API keys:</strong>
+        </div>
+
+        <ol>
+            <li><strong>Create Account</strong>: Go to <a href="https://lnmarkets.com">lnmarkets.com</a> and create a free account</li>
+            <li><strong>Fund Account</strong>: Deposit funds using the Lightning address shown in your profile</li>
+            <li><strong>Generate API Keys</strong>:
+                <ul>
+                    <li>Go to <strong>Profile</strong> → <strong>API V3</strong> tab</li>
+                    <li>Click <strong>"Create New Keys"</strong></li>
+                    <li><strong>Grant ALL permissions</strong> (check all boxes)</li>
+                    <li>Click <strong>OK</strong> to generate keys</li>
+                </ul>
+            </li>
+            <li><strong>Save Credentials</strong>: Immediately save ALL data on your smartphone:
+                <ul>
+                    <li><strong>API Key</strong> (long base64 string)</li>
+                    <li><strong>API Secret</strong> (long base64 string)</li>
+                    <li><strong>API Passphrase</strong> (alphanumeric string)</li>
+                    <li><strong>Lightning Address</strong> (shown in your profile, format: user@lnmarkets.com)</li>
+                </ul>
+            </li>
+            <li><strong>Test Keys</strong>: Make a small deposit to verify your Lightning address works</li>
+        </ol>
+
+        <div class="warning">
+            <strong>⚠️ WARNING</strong>: Without API keys, you can only view prices. Trading requires API access.
+        </div>
+
+        <h3>1. First Boot Configuration</h3>
+        <ul>
+            <li><strong>Power on</strong> the device</li>
+            <li><strong>Connect to WiFi</strong> "LNMarkets-Touch" network</li>
+            <li><strong>Open browser</strong> and go to <span class="code">192.168.4.1</span></li>
+            <li><strong>Enter your settings:</strong>
+                <ul>
+                    <li>WiFi network name and password</li>
+                    <li>LN Markets API credentials (from step 5 above)</li>
+                    <li>Lightning addresses (from step 5 above)</li>
+                </ul>
+            </li>
+            <li><strong>Save configuration</strong> - device will restart</li>
+        </ul>
+
+        <h3>2. Main Interface</h3>
+        <ul>
+            <li><strong>HOME</strong>: Bitcoin price, trading controls</li>
+            <li><strong>WALLET</strong>: Balance management, deposits/withdrawals</li>
+            <li><strong>POSITIONS</strong>: Open trades and orders</li>
+            <li><strong>HISTORY</strong>: Trade history and deposits</li>
+        </ul>
+
+        <h3>3. Trading</h3>
+        <ul>
+            <li><strong>Select side</strong>: BUY or SELL button</li>
+            <li><strong>Choose leverage</strong>: 25x, 50x, 75x, or 100x</li>
+            <li><strong>Set margin</strong>: Use quick buttons or +/- controls</li>
+            <li><strong>Execute</strong>: Press EXECUTE button</li>
+        </ul>
+
+        <h3>4. Fund Management</h3>
+        <ul>
+            <li><strong>Deposit</strong>: Generate Lightning invoice</li>
+            <li><strong>Withdraw</strong>: Send to Lightning address</li>
+            <li><strong>History</strong>: View all transactions</li>
+        </ul>
+
+        <hr>
+
+        <h2>📱 DETAILED USER GUIDE</h2>
+
+        <h3>Configuration Portal</h3>
+        <p>When first powered on, the device creates a WiFi hotspot:</p>
+        <ul>
+            <li><strong>Network</strong>: LNMarkets-Touch</li>
+            <li><strong>IP</strong>: 192.168.4.1</li>
+        </ul>
+
+        <p><strong>Required Settings:</strong></p>
+        <ul>
+            <li>WiFi SSID and password for internet connection</li>
+            <li><strong>LN Markets API key, secret, and passphrase</strong> (MANDATORY for trading - from account setup above)</li>
+        </ul>
+
+        <p><strong>Optional Settings:</strong></p>
+        <ul>
+            <li>Lightning withdrawal address (format: user@domain.com)</li>
+            <li>Lightning deposit address (format: user@domain.com)</li>
+        </ul>
+
+        <div class="warning">
+            <strong>⚠️ NOTE</strong>: Without API keys, you can only view prices in demo mode. Trading requires API access.
+        </div>
+
+        <h3>Main Screen (HOME)</h3>
+        <p><strong>Top Navigation:</strong></p>
+        <ul>
+            <li>HOME (red when active)</li>
+            <li>WALLET, POSITIONS, HISTORY tabs</li>
+        </ul>
+
+        <p><strong>Bitcoin Price Display:</strong></p>
+        <ul>
+            <li>Real-time BTC/USD price</li>
+            <li>Updates every 2 seconds</li>
+        </ul>
+
+        <p><strong>Trading Controls:</strong></p>
+        <ul>
+            <li><strong>BUY/SELL buttons</strong>: Select trade direction</li>
+            <li><strong>Leverage buttons</strong>: 25x, 50x, 75x, 100x</li>
+            <li><strong>Quick margin</strong>: 100, 500, 1000, 5000 sats</li>
+            <li><strong>Margin controls</strong>: +/- buttons (100 sats steps)</li>
+            <li><strong>EXECUTE button</strong>: Place the trade</li>
+        </ul>
+
+        <h3>Wallet Screen</h3>
+        <p><strong>Balance Display:</strong></p>
+        <ul>
+            <li>Current sats balance</li>
+            <li>USD equivalent</li>
+        </ul>
+
+        <p><strong>Withdrawal Controls:</strong></p>
+        <ul>
+            <li><strong>Quick amounts</strong>: 100, 500, 1000, 2000 sats</li>
+            <li><strong>+/- buttons</strong>: Adjust withdrawal amount</li>
+            <li><strong>WITHDRAW button</strong>: Send to Lightning address</li>
+        </ul>
+
+        <p><strong>Deposit Controls:</strong></p>
+        <ul>
+            <li><strong>DEPOSIT button</strong>: Generate Lightning invoice</li>
+            <li><strong>DEPOSIT HISTORY</strong>: View past deposits</li>
+        </ul>
+
+        <p><strong>Settings:</strong></p>
+        <ul>
+            <li><strong>RESET CONFIG</strong>: Clear all settings (bottom right)</li>
+        </ul>
+
+        <h3>Positions Screen</h3>
+        <p><strong>Running Positions:</strong></p>
+        <ul>
+            <li>Shows active trades</li>
+            <li>P&L percentage and sats</li>
+            <li><strong>CLOSE button</strong>: Exit position</li>
+        </ul>
+
+        <p><strong>Open Orders:</strong></p>
+        <ul>
+            <li>Pending limit orders</li>
+            <li><strong>CANCEL button</strong>: Remove order</li>
+        </ul>
+
+        <h3>History Screen</h3>
+        <p><strong>Closed Trades:</strong></p>
+        <ul>
+            <li>Completed positions</li>
+            <li>Final P&L results</li>
+            <li>Close dates</li>
+        </ul>
+
+        <p><strong>Lightning Deposits:</strong></p>
+        <ul>
+            <li>Payment history</li>
+            <li>Amounts and timestamps</li>
+        </ul>
+
+        <hr>
+
+        <h2>⚠️ IMPORTANT SAFETY NOTES</h2>
+
+        <h3>Trading Risks</h3>
+        <ul>
+            <li><strong>Bitcoin futures trading involves substantial risk</strong></li>
+            <li><strong>You may lose all your invested capital</strong></li>
+            <li><strong>Only trade with money you can afford to lose</strong></li>
+            <li><strong>Past performance does not guarantee future results</strong></li>
+        </ul>
+
+        <h3>Technical Notes</h3>
+        <ul>
+            <li><strong>Version 0.1</strong>: May contain bugs or unexpected behavior</li>
+            <li><strong>Device may reboot</strong> during operation</li>
+            <li><strong>Always backup</strong> your API credentials</li>
+            <li><strong>Test with small amounts</strong> first</li>
+        </ul>
+
+        <h3>Security</h3>
+        <ul>
+            <li><strong>Keep your device secure</strong> - physical access = full access</li>
+            <li><strong>Use strong WiFi passwords</strong></li>
+            <li><strong>Regularly update</strong> API credentials if compromised</li>
+            <li><strong>Monitor your positions</strong> - no guaranteed execution</li>
+        </ul>
+
+        <hr>
+
+        <h2>🔧 TROUBLESHOOTING</h2>
+
+        <h3>No WiFi Connection</h3>
+        <ul>
+            <li>Check WiFi credentials in configuration</li>
+            <li>Restart device and reconfigure</li>
+        </ul>
+
+        <h3>API Connection Failed</h3>
+        <ul>
+            <li>Verify LN Markets API credentials</li>
+            <li>Check internet connection</li>
+            <li>Try public mode (no API keys)</li>
+        </ul>
+
+        <h3>Touch Not Responding</h3>
+        <ul>
+            <li>Clean screen surface</li>
+            <li>Press firmly on buttons</li>
+            <li>Restart device if unresponsive</li>
+        </ul>
+
+        <h3>Trading Errors</h3>
+        <ul>
+            <li>Check available balance</li>
+            <li>Verify leverage limits</li>
+            <li>Confirm API permissions</li>
+        </ul>
+
+        <h3>Device Reboots</h3>
+        <ul>
+            <li>Normal during heavy network activity</li>
+            <li>May indicate memory issues</li>
+            <li>Restart and try again</li>
+        </ul>
+
+        <hr>
+
+        <h2>📞 SUPPORT</h2>
+
+        <p>For issues or questions:</p>
+        <ul>
+            <li>Check LN Markets documentation: <a href="https://lnmarkets.com">lnmarkets.com</a></li>
+            <li>Community forums: <a href="https://discord.gg/lnmarkets">discord.gg/lnmarkets</a></li>
+            <li>GitHub issues: <a href="https://github.com/lnmarkets/touch-terminal">github.com/lnmarkets/touch-terminal</a></li>
+        </ul>
+
+        <hr>
+        <hr>
+        <hr>
+
+        <h1>Terminal Tactile LN Markets - Notice d'Utilisation</h1>
+        <h2>Version 0.1 - Terminal de Trading</h2>
+
+        <hr>
+
+        <h2>🚀 GUIDE DE DÉMARRAGE RAPIDE</h2>
+
+        <h3>⚠️ IMPORTANT: CONFIGURATION COMPTE LN MARKETS (À FAIRE EN PREMIER!)</h3>
+
+        <div class="warning">
+            <strong>Avant de configurer l'appareil, vous DEVEZ créer un compte LN Markets et des clés API:</strong>
+        </div>
+
+        <ol>
+            <li><strong>Créer un Compte</strong>: Allez sur <a href="https://lnmarkets.com">lnmarkets.com</a> et créez un compte gratuit</li>
+            <li><strong>Alimenter le Compte</strong>: Déposez des fonds en utilisant l'adresse Lightning affichée dans votre profil</li>
+            <li><strong>Générer les Clés API</strong>:
+                <ul>
+                    <li>Allez dans <strong>Profil</strong> → onglet <strong>API V3</strong></li>
+                    <li>Cliquez sur <strong>"Create New Keys"</strong></li>
+                    <li><strong>Accordez TOUTES les permissions</strong> (cochez toutes les cases)</li>
+                    <li>Cliquez sur <strong>OK</strong> pour générer les clés</li>
+                </ul>
+            </li>
+            <li><strong>Sauvegardez les Identifiants</strong>: Sauvegardez IMMÉDIATEMENT toutes les données sur votre smartphone:
+                <ul>
+                    <li><strong>Clé API</strong> (longue chaîne base64)</li>
+                    <li><strong>Secret API</strong> (longue chaîne base64)</li>
+                    <li><strong>Passphrase API</strong> (chaîne alphanumérique)</li>
+                    <li><strong>Adresse Lightning</strong> (affichée dans votre profil, format: user@lnmarkets.com)</li>
+                </ul>
+            </li>
+            <li><strong>Tester les Clés</strong>: Faites un petit dépôt pour vérifier que votre adresse Lightning fonctionne</li>
+        </ol>
+
+        <div class="warning">
+            <strong>⚠️ ATTENTION</strong>: Sans clés API, vous ne pouvez que voir les prix. Le trading nécessite l'accès API.
+        </div>
+
+        <h3>1. Configuration au Premier Démarrage</h3>
+        <ul>
+            <li><strong>Allumez</strong> l'appareil</li>
+            <li><strong>Connectez-vous au WiFi</strong> "LNMarkets-Touch"</li>
+            <li><strong>Ouvrez votre navigateur</strong> et allez sur <span class="code">192.168.4.1</span></li>
+            <li><strong>Saisissez vos paramètres :</strong>
+                <ul>
+                    <li>Nom et mot de passe du réseau WiFi</li>
+                    <li>Clés API LN Markets (de l'étape 5 ci-dessus)</li>
+                    <li>Adresses Lightning (de l'étape 5 ci-dessus)</li>
+                </ul>
+            </li>
+            <li><strong>Sauvegardez la configuration</strong> - l'appareil redémarrera</li>
+        </ul>
+
+        <h3>2. Interface Principale</h3>
+        <ul>
+            <li><strong>HOME</strong> : Prix Bitcoin, contrôles de trading</li>
+            <li><strong>WALLET</strong> : Gestion du solde, dépôts/retraits</li>
+            <li><strong>POSITIONS</strong> : Trades ouverts et ordres</li>
+            <li><strong>HISTORIQUE</strong> : Historique des trades et dépôts</li>
+        </ul>
+
+        <h3>3. Trading</h3>
+        <ul>
+            <li><strong>Sélectionnez le côté</strong> : Bouton BUY ou SELL</li>
+            <li><strong>Choisissez le levier</strong> : 25x, 50x, 75x, ou 100x</li>
+            <li><strong>Définissez la marge</strong> : Boutons rapides ou contrôles +/-</li>
+            <li><strong>Exécutez</strong> : Appuyez sur le bouton EXECUTE</li>
+        </ul>
+
+        <h3>4. Gestion des Fonds</h3>
+        <ul>
+            <li><strong>Dépôt</strong> : Générez une facture Lightning</li>
+            <li><strong>Retrait</strong> : Envoyez vers une adresse Lightning</li>
+            <li><strong>Historique</strong> : Consultez toutes les transactions</li>
+        </ul>
+
+        <hr>
+
+        <h2>📱 GUIDE UTILISATEUR DÉTAILLÉ</h2>
+
+        <h3>Portail de Configuration</h3>
+        <p>Au premier démarrage, l'appareil crée un hotspot WiFi :</p>
+        <ul>
+            <li><strong>Réseau</strong> : LNMarkets-Touch</li>
+            <li><strong>IP</strong> : 192.168.4.1</li>
+        </ul>
+
+        <p><strong>Paramètres Obligatoires :</strong></p>
+        <ul>
+            <li>SSID et mot de passe WiFi pour la connexion internet</li>
+            <li><strong>Clé API, secret et passphrase LN Markets</strong> (OBLIGATOIRE pour le trading - de la configuration compte ci-dessus)</li>
+        </ul>
+
+        <p><strong>Paramètres Optionnels :</strong></p>
+        <ul>
+            <li>Adresse Lightning de retrait (format : utilisateur@domaine.com)</li>
+            <li>Adresse Lightning de dépôt (format : utilisateur@domaine.com)</li>
+        </ul>
+
+        <div class="warning">
+            <strong>⚠️ NOTE</strong>: Sans clés API, vous ne pouvez que voir les prix en mode démo. Le trading nécessite l'accès API.
+        </div>
+
+        <h3>Écran Principal (HOME)</h3>
+        <p><strong>Navigation Supérieure :</strong></p>
+        <ul>
+            <li>HOME (rouge quand actif)</li>
+            <li>Onglets WALLET, POSITIONS, HISTORY</li>
+        </ul>
+
+        <p><strong>Affichage Prix Bitcoin :</strong></p>
+        <ul>
+            <li>Prix BTC/USD temps réel</li>
+            <li>Mise à jour toutes les 2 secondes</li>
+        </ul>
+
+        <p><strong>Contrôles de Trading :</strong></p>
+        <ul>
+            <li><strong>Boutons BUY/SELL</strong> : Sélectionnez la direction du trade</li>
+            <li><strong>Boutons Levier</strong> : 25x, 50x, 75x, 100x</li>
+            <li><strong>Marges rapides</strong> : 100, 500, 1000, 5000 sats</li>
+            <li><strong>Contrôles marge</strong> : Boutons +/- (pas de 100 sats)</li>
+            <li><strong>Bouton EXECUTE</strong> : Placez le trade</li>
+        </ul>
+
+        <h3>Écran Wallet</h3>
+        <p><strong>Affichage Solde :</strong></p>
+        <ul>
+            <li>Solde actuel en sats</li>
+            <li>Équivalent en USD</li>
+        </ul>
+
+        <p><strong>Contrôles de Retrait :</strong></p>
+        <ul>
+            <li><strong>Montants rapides</strong> : 100, 500, 1000, 2000 sats</li>
+            <li><strong>Boutons +/-</strong> : Ajustez le montant de retrait</li>
+            <li><strong>Bouton WITHDRAW</strong> : Envoyez vers l'adresse Lightning</li>
+        </ul>
+
+        <p><strong>Contrôles de Dépôt :</strong></p>
+        <ul>
+            <li><strong>Bouton DEPOSIT</strong> : Générez une facture Lightning</li>
+            <li><strong>DEPOSIT HISTORY</strong> : Consultez les dépôts passés</li>
+        </ul>
+
+        <p><strong>Paramètres :</strong></p>
+        <ul>
+            <li><strong>RESET CONFIG</strong> : Effacez tous les paramètres (bas droite)</li>
+        </ul>
+
+        <h3>Écran Positions</h3>
+        <p><strong>Positions Ouvertes :</strong></p>
+        <ul>
+            <li>Affiche les trades actifs</li>
+            <li>P&L en pourcentage et sats</li>
+            <li><strong>Bouton CLOSE</strong> : Sortez de la position</li>
+        </ul>
+
+        <p><strong>Ordres Ouverts :</strong></p>
+        <ul>
+            <li>Ordres limite en attente</li>
+            <li><strong>Bouton CANCEL</strong> : Supprimez l'ordre</li>
+        </ul>
+
+        <h3>Écran Historique</h3>
+        <p><strong>Trades Fermés :</strong></p>
+        <ul>
+            <li>Positions terminées</li>
+            <li>Résultats P&L finaux</li>
+            <li>Dates de clôture</li>
+        </ul>
+
+        <p><strong>Dépôts Lightning :</strong></p>
+        <ul>
+            <li>Historique des paiements</li>
+            <li>Montants et horodatages</li>
+        </ul>
+
+        <hr>
+
+        <h2>⚠️ NOTES DE SÉCURITÉ IMPORTANTES</h2>
+
+        <h3>Risques de Trading</h3>
+        <ul>
+            <li><strong>Le trading de futures Bitcoin comporte des risques substantiels</strong></li>
+            <li><strong>Vous pouvez perdre tout votre capital investi</strong></li>
+            <li><strong>Tradez uniquement avec de l'argent que vous pouvez vous permettre de perdre</strong></li>
+            <li><strong>Les performances passées ne garantissent pas les résultats futurs</strong></li>
+        </ul>
+
+        <h3>Notes Techniques</h3>
+        <ul>
+            <li><strong>Version 0.1</strong> : Peut contenir des bugs ou comportements inattendus</li>
+            <li><strong>L'appareil peut redémarrer</strong> pendant le fonctionnement</li>
+            <li><strong>Sauvegardez toujours</strong> vos clés API</li>
+            <li><strong>Testez avec de petits montants</strong> d'abord</li>
+        </ul>
+
+        <h3>Sécurité</h3>
+        <ul>
+            <li><strong>Gardez votre appareil sécurisé</strong> - accès physique = accès complet</li>
+            <li><strong>Utilisez des mots de passe WiFi forts</strong></li>
+            <li><strong>Mettez à jour régulièrement</strong> les clés API si compromises</li>
+            <li><strong>Surveillez vos positions</strong> - pas d'exécution garantie</li>
+        </ul>
+
+        <hr>
+
+        <h2>🔧 DÉPANNAGE</h2>
+
+        <h3>Pas de Connexion WiFi</h3>
+        <ul>
+            <li>Vérifiez les identifiants WiFi dans la configuration</li>
+            <li>Redémarrez l'appareil et reconfigurez</li>
+        </ul>
+
+        <h3>Connexion API Échouée</h3>
+        <ul>
+            <li>Vérifiez les clés API LN Markets</li>
+            <li>Vérifiez la connexion internet</li>
+            <li>Essayez le mode public (sans clés API)</li>
+        </ul>
+
+        <h3>Tactile Ne Répond Pas</h3>
+        <ul>
+            <li>Nettoyez la surface de l'écran</li>
+            <li>Appuyez fermement sur les boutons</li>
+            <li>Redémarrez l'appareil s'il ne répond pas</li>
+        </ul>
+
+        <h3>Erreurs de Trading</h3>
+        <ul>
+            <li>Vérifiez le solde disponible</li>
+            <li>Vérifiez les limites de levier</li>
+            <li>Confirmez les permissions API</li>
+        </ul>
+
+        <h3>Redémarrages de l'Appareil</h3>
+        <ul>
+            <li>Normal pendant une activité réseau intense</li>
+            <li>May indiquer des problèmes de mémoire</li>
+            <li>Redémarrez et réessayez</li>
+        </ul>
+
+        <hr>
+
+        <h2>📞 SUPPORT</h2>
+
+        <p>Pour les problèmes ou questions :</p>
+        <ul>
+            <li>Consultez la documentation LN Markets : <a href="https://lnmarkets.com">lnmarkets.com</a></li>
+            <li>Forums communautaires : <a href="https://discord.gg/lnmarkets">discord.gg/lnmarkets</a></li>
+            <li>Issues GitHub : <a href="https://github.com/lnmarkets/touch-terminal">github.com/lnmarkets/touch-terminal</a></li>
+        </ul>
+
+        <hr>
+
+        <div class="warning">
+            <strong>⚠️ AVERTISSEMENT SUR LES JEUX D'ARGENT</strong>
+        </div>
+
+        <p>Le trading de crypto-monnaies, y compris les futures Bitcoin, est considéré comme un jeu d'argent dans de nombreux pays. Cette activité comporte des risques élevés de perte financière. LN Markets Touch est un outil éducatif et de recherche - utilisez-le avec modération et responsabilité. Si vous souffrez d'addiction au jeu, contactez les services d'aide appropriés dans votre pays.</p>
+
+        <div class="warning">
+            <strong>Avertissement : Cette version 0.1 peut contenir des bugs mineurs ou redémarrages inattendus. Utilisez-la uniquement pour des tests et avec de petits montants.</strong>
+        </div>
+    </div>
+</body>
+</html>
+</h1>
+<li><strong>Power on</strong> the device
+</li>
+<li><strong>Connect to WiFi</strong> "LNMarkets-Touch" network
+</li>
+<li><strong>Open browser</strong> and go to <code>192.168.4.1</code>
+</li>
+<li><strong>Enter your settings:</strong>
+</li>
+  - WiFi network name and password
+  - LN Markets API credentials (from step 5 above)
+  - Lightning addresses (from step 5 above)
+<li><strong>Save configuration</strong> - device will restart
+</li>
+
+##<h1>2. Main Interface
+</h1>
+<li><strong>HOME</strong>: Bitcoin price, trading controls
+</li>
+<li><strong>WALLET</strong>: Balance management, deposits/withdrawals
+</li>
+<li><strong>POSITIONS</strong>: Open trades and orders
+</li>
+<li><strong>HISTORY</strong>: Trade history and deposits
+</li>
+
+##<h1>3. Trading
+</h1>
+<li><strong>Select side</strong>: BUY or SELL button
+</li>
+<li><strong>Choose leverage</strong>: 25x, 50x, 75x, or 100x
+</li>
+<li><strong>Set margin</strong>: Use quick buttons or +/- controls
+</li>
+<li><strong>Execute</strong>: Press EXECUTE button
+</li>
+
+##<h1>4. Fund Management
+</h1>
+<li><strong>Deposit</strong>: Generate Lightning invoice
+</li>
+<li><strong>Withdraw</strong>: Send to Lightning address
+</li>
+<li><strong>History</strong>: View all transactions
+</li>
+
+---
+
+#<h1>📱 DETAILED USER GUIDE
+</h1>
+
+##<h1>Configuration Portal
+</h1>
+When first powered on, the device creates a WiFi hotspot:
+<li><strong>Network</strong>: LNMarkets-Touch
+</li>
+<li><strong>IP</strong>: 192.168.4.1
+</li>
+
+<strong>Required Settings:</strong>
+<li>WiFi SSID and password for internet connection
+</li>
+<li><strong>LN Markets API key, secret, and passphrase</strong> (MANDATORY for trading - from account setup above)
+</li>
+
+<strong>Optional Settings:</strong>
+<li>Lightning withdrawal address (format: user@domain.com)
+</li>
+<li>Lightning deposit address (format: user@domain.com)
+</li>
+
+<strong>⚠️ NOTE</strong>: Without API keys, you can only view prices in demo mode. Trading requires API access.
+
+##<h1>Main Screen (HOME)
+</h1>
+<strong>Top Navigation:</strong>
+<li>HOME (red when active)
+</li>
+<li>WALLET, POSITIONS, HISTORY tabs
+</li>
+
+<strong>Bitcoin Price Display:</strong>
+<li>Real-time BTC/USD price
+</li>
+<li>Updates every 2 seconds
+</li>
+
+<strong>Trading Controls:</strong>
+<li><strong>BUY/SELL buttons</strong>: Select trade direction
+</li>
+<li><strong>Leverage buttons</strong>: 25x, 50x, 75x, 100x
+</li>
+<li><strong>Quick margin</strong>: 100, 500, 1000, 5000 sats
+</li>
+<li><strong>Margin controls</strong>: +/- buttons (100 sats steps)
+</li>
+<li><strong>EXECUTE button</strong>: Place the trade
+</li>
+
+##<h1>Wallet Screen
+</h1>
+<strong>Balance Display:</strong>
+<li>Current sats balance
+</li>
+<li>USD equivalent
+</li>
+
+<strong>Withdrawal Controls:</strong>
+<li><strong>Quick amounts</strong>: 100, 500, 1000, 2000 sats
+</li>
+<li><strong>+/- buttons</strong>: Adjust withdrawal amount
+</li>
+<li><strong>WITHDRAW button</strong>: Send to Lightning address
+</li>
+
+<strong>Deposit Controls:</strong>
+<li><strong>DEPOSIT button</strong>: Generate Lightning invoice
+</li>
+<li><strong>DEPOSIT HISTORY</strong>: View past deposits
+</li>
+
+<strong>Settings:</strong>
+<li><strong>RESET CONFIG</strong>: Clear all settings (bottom right)
+</li>
+
+##<h1>Positions Screen
+</h1>
+<strong>Running Positions:</strong>
+<li>Shows active trades
+</li>
+<li>P&L percentage and sats
+</li>
+<li><strong>CLOSE button</strong>: Exit position
+</li>
+
+<strong>Open Orders:</strong>
+<li>Pending limit orders
+</li>
+<li><strong>CANCEL button</strong>: Remove order
+</li>
+
+##<h1>History Screen
+</h1>
+<strong>Closed Trades:</strong>
+<li>Completed positions
+</li>
+<li>Final P&L results
+</li>
+<li>Close dates
+</li>
+
+<strong>Lightning Deposits:</strong>
+<li>Payment history
+</li>
+<li>Amounts and timestamps
+</li>
+
+---
+
+#<h1>⚠️ IMPORTANT SAFETY NOTES
+</h1>
+
+##<h1>Trading Risks
+</h1>
+<li><strong>Bitcoin futures trading involves substantial risk</strong>
+</li>
+<li><strong>You may lose all your invested capital</strong>
+</li>
+<li><strong>Only trade with money you can afford to lose</strong>
+</li>
+<li><strong>Past performance does not guarantee future results</strong>
+</li>
+
+##<h1>Technical Notes
+</h1>
+<li><strong>Version 0.1</strong>: May contain bugs or unexpected behavior
+</li>
+<li><strong>Device may reboot</strong> during operation
+</li>
+<li><strong>Always backup</strong> your API credentials
+</li>
+<li><strong>Test with small amounts</strong> first
+</li>
+
+##<h1>Security
+</h1>
+<li><strong>Keep your device secure</strong> - physical access = full access
+</li>
+<li><strong>Use strong WiFi passwords</strong>
+</li>
+<li><strong>Regularly update</strong> API credentials if compromised
+</li>
+<li><strong>Monitor your positions</strong> - no guaranteed execution
+</li>
+
+---
+
+#<h1>🔧 TROUBLESHOOTING
+</h1>
+
+##<h1>No WiFi Connection
+</h1>
+<li>Check WiFi credentials in configuration
+</li>
+<li>Restart device and reconfigure
+</li>
+
+##<h1>API Connection Failed
+</h1>
+<li>Verify LN Markets API credentials
+</li>
+<li>Check internet connection
+</li>
+<li>Try public mode (no API keys)
+</li>
+
+##<h1>Touch Not Responding
+</h1>
+<li>Clean screen surface
+</li>
+<li>Press firmly on buttons
+</li>
+<li>Restart device if unresponsive
+</li>
+
+##<h1>Trading Errors
+</h1>
+<li>Check available balance
+</li>
+<li>Verify leverage limits
+</li>
+<li>Confirm API permissions
+</li>
+
+##<h1>Device Reboots
+</h1>
+<li>Normal during heavy network activity
+</li>
+<li>May indicate memory issues
+</li>
+<li>Restart and try again
+</li>
+
+---
+
+#<h1>📞 SUPPORT
+</h1>
+
+For issues or questions:
+<li>Check LN Markets documentation: lnmarkets.com
+</li>
+<li>Community forums: discord.gg/lnmarkets
+</li>
+<li>GitHub issues: github.com/lnmarkets/touch-terminal
+</li>
+
+---
+
+---
+
+---
+
+<h1>Terminal Tactile LN Markets - Notice d'Utilisation
+</h1>
+#<h1>Version 0.1 - Terminal de Trading
+</h1>
+
+---
+
+#<h1>🚀 GUIDE DE DÉMARRAGE RAPIDE
+</h1>
+
+##<h1>⚠️ IMPORTANT: CONFIGURATION COMPTE LN MARKETS (À FAIRE EN PREMIER!)
+</h1>
+
+<strong>Avant de configurer l'appareil, vous DEVEZ créer un compte LN Markets et des clés API:</strong>
+
+<li>1</li>
+<li>2</li>
+<li>3</li>
+   - Allez dans <strong>Profil</strong> → onglet <strong>API V3</strong>
+   - Cliquez sur <strong>"Create New Keys"</strong>
+   - <strong>Accordez TOUTES les permissions</strong> (cochez toutes les cases)
+   - Cliquez sur <strong>OK</strong> pour générer les clés
+<li>4</li>
+   - <strong>Clé API</strong> (longue chaîne base64)
+   - <strong>Secret API</strong> (longue chaîne base64)
+   - <strong>Passphrase API</strong> (chaîne alphanumérique)
+   - <strong>Adresse Lightning</strong> (affichée dans votre profil, format: user@lnmarkets.com)
+<li>5</li>
+
+<strong>⚠️ ATTENTION</strong>: Sans clés API, vous ne pouvez que voir les prix. Le trading nécessite l'accès API.
+
+##<h1>1. Configuration au Premier Démarrage
+</h1>
+<li><strong>Allumez</strong> l'appareil
+</li>
+<li><strong>Connectez-vous au WiFi</strong> "LNMarkets-Touch"
+</li>
+<li><strong>Ouvrez votre navigateur</strong> et allez sur <code>192.168.4.1</code>
+</li>
+<li><strong>Saisissez vos paramètres :</strong>
+</li>
+  - Nom et mot de passe du réseau WiFi
+  - Clés API LN Markets (de l'étape 5 ci-dessus)
+  - Adresses Lightning (de l'étape 5 ci-dessus)
+<li><strong>Sauvegardez la configuration</strong> - l'appareil redémarrera
+</li>
+
+##<h1>2. Interface Principale
+</h1>
+<li><strong>HOME</strong> : Prix Bitcoin, contrôles de trading
+</li>
+<li><strong>WALLET</strong> : Gestion du solde, dépôts/retraits
+</li>
+<li><strong>POSITIONS</strong> : Trades ouverts et ordres
+</li>
+<li><strong>HISTORIQUE</strong> : Historique des trades et dépôts
+</li>
+
+##<h1>3. Trading
+</h1>
+<li><strong>Sélectionnez le côté</strong> : Bouton BUY ou SELL
+</li>
+<li><strong>Choisissez le levier</strong> : 25x, 50x, 75x, ou 100x
+</li>
+<li><strong>Définissez la marge</strong> : Boutons rapides ou contrôles +/-
+</li>
+<li><strong>Exécutez</strong> : Appuyez sur le bouton EXECUTE
+</li>
+
+##<h1>4. Gestion des Fonds
+</h1>
+<li><strong>Dépôt</strong> : Générez une facture Lightning
+</li>
+<li><strong>Retrait</strong> : Envoyez vers une adresse Lightning
+</li>
+<li><strong>Historique</strong> : Consultez toutes les transactions
+</li>
+
+---
+
+#<h1>📱 GUIDE UTILISATEUR DÉTAILLÉ
+</h1>
+
+##<h1>Portail de Configuration
+</h1>
+Au premier démarrage, l'appareil crée un hotspot WiFi :
+<li><strong>Réseau</strong> : LNMarkets-Touch
+</li>
+<li><strong>IP</strong> : 192.168.4.1
+</li>
+
+<strong>Paramètres Obligatoires :</strong>
+<li>SSID et mot de passe WiFi pour la connexion internet
+</li>
+<li><strong>Clé API, secret et passphrase LN Markets</strong> (OBLIGATOIRE pour le trading - de la configuration compte ci-dessus)
+</li>
+
+<strong>Paramètres Optionnels :</strong>
+<li>Adresse Lightning de retrait (format : utilisateur@domaine.com)
+</li>
+<li>Adresse Lightning de dépôt (format : utilisateur@domaine.com)
+</li>
+
+<strong>⚠️ NOTE</strong>: Sans clés API, vous ne pouvez que voir les prix en mode démo. Le trading nécessite l'accès API.
+
+##<h1>Écran Principal (HOME)
+</h1>
+<strong>Navigation Supérieure :</strong>
+<li>HOME (rouge quand actif)
+</li>
+<li>Onglets WALLET, POSITIONS, HISTORY
+</li>
+
+<strong>Affichage Prix Bitcoin :</strong>
+<li>Prix BTC/USD temps réel
+</li>
+<li>Mise à jour toutes les 2 secondes
+</li>
+
+<strong>Contrôles de Trading :</strong>
+<li><strong>Boutons BUY/SELL</strong> : Sélectionnez la direction du trade
+</li>
+<li><strong>Boutons Levier</strong> : 25x, 50x, 75x, 100x
+</li>
+<li><strong>Marges rapides</strong> : 100, 500, 1000, 5000 sats
+</li>
+<li><strong>Contrôles marge</strong> : Boutons +/- (pas de 100 sats)
+</li>
+<li><strong>Bouton EXECUTE</strong> : Placez le trade
+</li>
+
+##<h1>Écran Wallet
+</h1>
+<strong>Affichage Solde :</strong>
+<li>Solde actuel en sats
+</li>
+<li>Équivalent en USD
+</li>
+
+<strong>Contrôles de Retrait :</strong>
+<li><strong>Montants rapides</strong> : 100, 500, 1000, 2000 sats
+</li>
+<li><strong>Boutons +/-</strong> : Ajustez le montant de retrait
+</li>
+<li><strong>Bouton WITHDRAW</strong> : Envoyez vers l'adresse Lightning
+</li>
+
+<strong>Contrôles de Dépôt :</strong>
+<li><strong>Bouton DEPOSIT</strong> : Générez une facture Lightning
+</li>
+<li><strong>DEPOSIT HISTORY</strong> : Consultez les dépôts passés
+</li>
+
+<strong>Paramètres :</strong>
+<li><strong>RESET CONFIG</strong> : Effacez tous les paramètres (bas droite)
+</li>
+
+##<h1>Écran Positions
+</h1>
+<strong>Positions Ouvertes :</strong>
+<li>Affiche les trades actifs
+</li>
+<li>P&L en pourcentage et sats
+</li>
+<li><strong>Bouton CLOSE</strong> : Sortez de la position
+</li>
+
+<strong>Ordres Ouverts :</strong>
+<li>Ordres limite en attente
+</li>
+<li><strong>Bouton CANCEL</strong> : Supprimez l'ordre
+</li>
+
+##<h1>Écran Historique
+</h1>
+<strong>Trades Fermés :</strong>
+<li>Positions terminées
+</li>
+<li>Résultats P&L finaux
+</li>
+<li>Dates de clôture
+</li>
+
+<strong>Dépôts Lightning :</strong>
+<li>Historique des paiements
+</li>
+<li>Montants et horodatages
+</li>
+
+---
+
+#<h1>⚠️ NOTES DE SÉCURITÉ IMPORTANTES
+</h1>
+
+##<h1>Risques de Trading
+</h1>
+<li><strong>Le trading de futures Bitcoin comporte des risques substantiels</strong>
+</li>
+<li><strong>Vous pouvez perdre tout votre capital investi</strong>
+</li>
+<li><strong>Tradez uniquement avec de l'argent que vous pouvez vous permettre de perdre</strong>
+</li>
+<li><strong>Les performances passées ne garantissent pas les résultats futurs</strong>
+</li>
+
+##<h1>Notes Techniques
+</h1>
+<li><strong>Version 0.1</strong> : Peut contenir des bugs ou comportements inattendus
+</li>
+<li><strong>L'appareil peut redémarrer</strong> pendant le fonctionnement
+</li>
+<li><strong>Sauvegardez toujours</strong> vos clés API
+</li>
+<li><strong>Testez avec de petits montants</strong> d'abord
+</li>
+
+##<h1>Sécurité
+</h1>
+<li><strong>Gardez votre appareil sécurisé</strong> - accès physique = accès complet
+</li>
+<li><strong>Utilisez des mots de passe WiFi forts</strong>
+</li>
+<li><strong>Mettez à jour régulièrement</strong> les clés API si compromises
+</li>
+<li><strong>Surveillez vos positions</strong> - pas d'exécution garantie
+</li>
+
+---
+
+#<h1>🔧 DÉPANNAGE
+</h1>
+
+##<h1>Pas de Connexion WiFi
+</h1>
+<li>Vérifiez les identifiants WiFi dans la configuration
+</li>
+<li>Redémarrez l'appareil et reconfigurez
+</li>
+
+##<h1>Connexion API Échouée
+</h1>
+<li>Vérifiez les clés API LN Markets
+</li>
+<li>Vérifiez la connexion internet
+</li>
+<li>Essayez le mode public (sans clés API)
+</li>
+
+##<h1>Tactile Ne Répond Pas
+</h1>
+<li>Nettoyez la surface de l'écran
+</li>
+<li>Appuyez fermement sur les boutons
+</li>
+<li>Redémarrez l'appareil s'il ne répond pas
+</li>
+
+##<h1>Erreurs de Trading
+</h1>
+<li>Vérifiez le solde disponible
+</li>
+<li>Vérifiez les limites de levier
+</li>
+<li>Confirmez les permissions API
+</li>
+
+##<h1>Redémarrages de l'Appareil
+</h1>
+<li>Normal pendant une activité réseau intense
+</li>
+<li>Peut indiquer des problèmes de mémoire
+</li>
+<li>Redémarrez et réessayez
+</li>
+
+---
+
+#<h1>📞 SUPPORT
+</h1>
+
+Pour les problèmes ou questions :
+<li>Consultez la documentation LN Markets : lnmarkets.com
+</li>
+<li>Forums communautaires : discord.gg/lnmarkets
+</li>
+<li>Issues GitHub : github.com/lnmarkets/touch-terminal
+</li>
+
+---
+
+<strong>⚠️ AVERTISSEMENT SUR LES JEUX D'ARGENT</strong>
+
+Le trading de crypto-monnaies, y compris les futures Bitcoin, est considéré comme un jeu d'argent dans de nombreux pays. Cette activité comporte des risques élevés de perte financière. LN Markets Touch est un outil éducatif et de recherche - utilisez-le avec modération et responsabilité. Si vous souffrez d'addiction au jeu, contactez les services d'aide appropriés dans votre pays.
+
+<strong>Avertissement : Cette version 0.1 peut contenir des bugs mineurs ou redémarrages inattendus. Utilisez-la uniquement pour des tests et avec de petits montants.</strong>    </div>
+</body>
+</html>
