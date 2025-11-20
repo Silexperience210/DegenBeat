@@ -1084,7 +1084,7 @@ void startConfigPortal() {
   tft.setTextColor(COLOR_RED);
   tft.setTextSize(2);
   tft.setCursor(40, 100);
-  tft.println("LNMarkets-Touch");
+  tft.println("DEGENBEAT");
   
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
@@ -1097,7 +1097,7 @@ void startConfigPortal() {
   tft.println("192.168.4.1");
   
   // Démarrer AP
-  WiFi.softAP("LNMarkets-Touch");
+  WiFi.softAP("DEGENBEAT");
   IPAddress IP = WiFi.softAPIP();
   
   Serial.println("AP démarré:");
