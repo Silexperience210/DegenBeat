@@ -385,7 +385,7 @@ void setup() {
   }
   // If auto-detect failed (driver may report static width/height), fallback to rotation 1
   // which commonly maps to landscape on many modules. Log chosen rotation for debugging.
-  chosenRotation = 3; // Force rotation 3 for landscape
+  chosenRotation = 1; // Force rotation 1 (90°) for landscape
   Serial.printf("[INIT] FORCED rotation -> %d\n", chosenRotation);
   // Ensure rotation is applied
   tft.setRotation(chosenRotation);
