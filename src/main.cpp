@@ -110,6 +110,7 @@ int globalQrY = 50;
 // ===== COULEURS =====
 #define COLOR_BG 0x0010
 #define COLOR_RED 0xF800
+#define COLOR_BLUE 0x001F
 #define COLOR_CYAN 0x07FF
 #define COLOR_GREEN 0x07E0
 
@@ -366,7 +367,29 @@ void setup() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
   tft.init();
-  tft.setRotation(1);
+  // Initialize display and auto-detect rotation so the UI is shown in landscape
+  tft.init();
+  tft.fillScreen(COLOR_BG);
+  // Try rotations 0..3 and pick one where width > height (landscape)
+  int chosenRotation = 0;
+  for (int r = 0; r < 4; r++) {
+    tft.setRotation(r);
+    // allow driver to apply rotation
+    delay(50);
+    int w = tft.width();
+    int h = tft.height();
+    if (w > h) {
+      chosenRotation = r;
+      break;
+    }
+  }
+  // If auto-detect failed (driver may report static width/height), fallback to rotation 1
+  // which commonly maps to landscape on many modules. Log chosen rotation for debugging.
+  chosenRotation = 3; // Force rotation 3 for landscape
+  Serial.printf("[INIT] FORCED rotation -> %d\n", chosenRotation);
+  // Ensure rotation is applied
+  tft.setRotation(chosenRotation);
+  Serial.printf("[INIT] TFT rotation set to %d (w=%d h=%d)\n", chosenRotation, tft.width(), tft.height());
   tft.fillScreen(COLOR_BG);
   
   tft.setTextColor(COLOR_CYAN);
@@ -377,7 +400,8 @@ void setup() {
   
   SPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin();
-  touch.setRotation(1);
+  // Sync touchscreen rotation with the TFT rotation
+  touch.setRotation(chosenRotation);
   
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
@@ -864,7 +888,7 @@ void showMessage(String msg, uint16_t color, unsigned long duration) {
 void showMainScreen() {
   tft.fillScreen(COLOR_BG);
   
-  tft.fillRect(0, 0, 80, 40, COLOR_RED);
+  tft.fillRect(0, 0, 80, 40, COLOR_BLUE);
   tft.fillRect(80, 0, 80, 40, 0x39E7);
   tft.fillRect(160, 0, 80, 40, 0x39E7);
   tft.fillRect(240, 0, 80, 40, 0x39E7);
@@ -959,7 +983,7 @@ void showWalletScreen() {
   tft.fillScreen(COLOR_BG);
   
   tft.fillRect(0, 0, 80, 40, 0x39E7);
-  tft.fillRect(80, 0, 80, 40, COLOR_RED);
+  tft.fillRect(80, 0, 80, 40, COLOR_BLUE);
   tft.fillRect(160, 0, 80, 40, 0x39E7);
   tft.fillRect(240, 0, 80, 40, 0x39E7);
   
@@ -1067,7 +1091,7 @@ void showPositionsScreen() {
   
   tft.fillRect(0, 0, 80, 40, 0x39E7);
   tft.fillRect(80, 0, 80, 40, 0x39E7);
-  tft.fillRect(160, 0, 80, 40, COLOR_RED);
+  tft.fillRect(160, 0, 80, 40, COLOR_BLUE);
   tft.fillRect(240, 0, 80, 40, 0x39E7);
   
   tft.setTextColor(TFT_WHITE);
@@ -1183,7 +1207,7 @@ void showHistoryScreen() {
   tft.fillRect(0, 0, 80, 40, 0x39E7);
   tft.fillRect(80, 0, 80, 40, 0x39E7);
   tft.fillRect(160, 0, 80, 40, 0x39E7);
-  tft.fillRect(240, 0, 80, 40, COLOR_RED);
+  tft.fillRect(240, 0, 80, 40, COLOR_BLUE);
   
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
@@ -1488,7 +1512,7 @@ void showDepositHistoryScreen() {
     tft.fillScreen(COLOR_BG);
     
     tft.fillRect(0, 0, 80, 40, 0x39E7);
-    tft.fillRect(80, 0, 80, 40, COLOR_RED);
+    tft.fillRect(80, 0, 80, 40, COLOR_BLUE);
     tft.fillRect(160, 0, 80, 40, 0x39E7);
     tft.fillRect(240, 0, 80, 40, 0x39E7);
     
@@ -1942,7 +1966,7 @@ void startConfigPortal() {
   tft.setCursor(20, 80);
   tft.println("1. Connecte WiFi a:");
   
-  tft.setTextColor(COLOR_RED);
+  tft.setTextColor(COLOR_BLUE);
   tft.setTextSize(2);
   tft.setCursor(40, 100);
   tft.println("DEGENBEAT");
