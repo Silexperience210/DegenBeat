@@ -108,7 +108,7 @@ int globalQrX = 80;
 int globalQrY = 50;
 
 // ===== COULEURS =====
-#define COLOR_BG 0x0010
+#define COLOR_BG 0x0008
 #define COLOR_RED 0xF800
 #define COLOR_BLUE 0x001F
 #define COLOR_CYAN 0x07FF
@@ -1966,7 +1966,7 @@ void startConfigPortal() {
   tft.setCursor(20, 80);
   tft.println("1. Connecte WiFi a:");
   
-  tft.setTextColor(COLOR_BLUE);
+  tft.setTextColor(COLOR_RED);
   tft.setTextSize(2);
   tft.setCursor(40, 100);
   tft.println("DEGENBEAT");
