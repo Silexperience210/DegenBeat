@@ -108,7 +108,7 @@ int globalQrX = 80;
 int globalQrY = 50;
 
 // ===== COULEURS =====
-#define COLOR_BG 0x0008
+#define COLOR_BG 0x0004
 #define COLOR_RED 0xF800
 #define COLOR_BLUE 0x001F
 #define COLOR_CYAN 0x07FF
@@ -1956,7 +1956,7 @@ void startConfigPortal() {
   config_mode = true;
   
   tft.fillScreen(COLOR_BG);
-  tft.setTextColor(COLOR_CYAN);
+  tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.setCursor(40, 30);
   tft.println("MODE CONFIG");
@@ -1966,17 +1966,19 @@ void startConfigPortal() {
   tft.setCursor(20, 80);
   tft.println("1. Connecte WiFi a:");
   
-  tft.setTextColor(COLOR_RED);
+  tft.setTextColor(COLOR_GREEN);
   tft.setTextSize(2);
   tft.setCursor(40, 100);
-  tft.println("DEGENBEAT");
+  tft.print("DEGEN");
+  tft.setTextColor(COLOR_RED);
+  tft.println("BEAT");
   
   tft.setTextColor(TFT_WHITE);
   tft.setTextSize(1);
   tft.setCursor(20, 140);
   tft.println("2. Ouvre navigateur:");
   
-  tft.setTextColor(COLOR_CYAN);
+  tft.setTextColor(TFT_WHITE);
   tft.setTextSize(2);
   tft.setCursor(60, 160);
   tft.println("192.168.4.1");
