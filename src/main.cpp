@@ -367,6 +367,7 @@ void setup() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
   tft.init();
+  tft.invertDisplay(true); // Invert display for ST7789
   // Initialize display and auto-detect rotation so the UI is shown in landscape
   tft.init();
   tft.fillScreen(COLOR_BG);
