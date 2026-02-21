@@ -32,6 +32,7 @@
 
 // ===== OBJETS =====
 TFT_eSPI tft = TFT_eSPI();
+TFT_eSprite priceSprite = TFT_eSprite(&tft);  // Sprite antiflicker pour le prix BTC
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 WebServer server(80);
 DNSServer dnsServer;
@@ -48,7 +49,7 @@ String deposit_lnaddress = "";
 
 bool config_mode = false;
 bool api_connected = false;
-float btc_price = 0;
+volatile float btc_price = 0;
 
 SemaphoreHandle_t tft_mutex;
 TaskHandle_t price_update_task = NULL;
@@ -72,32 +73,32 @@ int selected_margin = 1000;
 // Running trades
 int running_trades_count = 0;
 long margin_in_positions = 0;
-String running_trades_details[5];
+char running_trades_details[5][52];   // "sell 100x 10000s\0" max ~20 chars
 float running_trades_pnl[5];
 long running_trades_pnl_sats[5];
-String running_trades_ids[5];
+char running_trades_ids[5][40];       // UUID 36 chars + null
 float running_trades_entry[5];
 int running_trades_leverage[5];
 long running_trades_margin[5];
 
 // Open orders
 int open_orders_count = 0;
-String open_orders_details[5];
-String open_orders_ids[5];
+char open_orders_details[5][64];      // "sell market 100x 10000s @99999\0"
+char open_orders_ids[5][40];          // UUID 36 chars + null
 
 // Closed trades
 int closed_trades_count = 0;
-String closed_trades_details[10];
+char closed_trades_details[10][52];   // "sell 100x abcdef12...\0"
 float closed_trades_pnl[10];
-String closed_trades_dates[10];
+char closed_trades_dates[10][12];     // "2025-01-31\0"
 
 // Lightning deposits
 int lightning_deposits_count = 0;
-String lightning_deposits_details[10];
+char lightning_deposits_details[10][52];  // "999999 sats - abcdef12...\0"
 long lightning_deposits_amounts[10];
-String lightning_deposits_dates[10];
-String lightning_deposits_hashes[10];
-String lightning_deposits_comments[10];
+char lightning_deposits_dates[10][12];    // "2025-01-31\0"
+char lightning_deposits_hashes[10][70];   // payment hash hex 64 chars + null
+char lightning_deposits_comments[10][36]; // commentaire tronqué à 35 chars
 
 // LED RGB
 bool led_blink_state = false;
@@ -163,6 +164,14 @@ struct CacheEntry {
   }
   
   void invalidate() { valid = false; }
+
+  // markValid() évite de stocker la réponse JSON en heap (~30-40KB économisés)
+  void markValid(unsigned long dur) {
+    data = "";
+    timestamp = millis();
+    duration = dur;
+    valid = true;
+  }
 };
 
 CacheEntry priceCache = {"", 0, 2000, false};
@@ -220,8 +229,8 @@ const TouchZone BTN_WITHDRAW = {250, 50, 315, 75};
 const TouchZone BTN_DEPOSIT = {250, 85, 315, 110};
 const TouchZone BTN_DEPOSIT_HISTORY = {250, 120, 315, 145};
 const TouchZone BTN_RESET_CONFIG = {250, 210, 315, 235};
-const TouchZone BTN_WITHDRAW_MINUS = {140, 220, 170, 240};
-const TouchZone BTN_WITHDRAW_PLUS = {180, 220, 210, 240};
+const TouchZone BTN_WITHDRAW_MINUS = {140, 210, 170, 230};
+const TouchZone BTN_WITHDRAW_PLUS = {180, 210, 210, 230};
 
 // ===== PROTOTYPES =====
 void loadConfig();
@@ -304,14 +313,15 @@ void fadeOut(int duration) {
   // return;
 }
 
-// ===== 🆕 AFFICHAGE PRIX SÉPARÉ =====
+// ===== 🆕 AFFICHAGE PRIX VIA SPRITE (antiflicker) =====
 void displayPrice(float price) {
-  tft.fillRect(8, 58, 172, 35, COLOR_BG);
-  tft.setTextColor(TFT_WHITE);
-  tft.setTextSize(4);
-  tft.setCursor(10, 60);
-  tft.print("$");
-  tft.println((int)price);
+  priceSprite.fillSprite(COLOR_BG);
+  priceSprite.setTextColor(TFT_WHITE);
+  priceSprite.setTextSize(4);
+  priceSprite.setCursor(2, 2);
+  priceSprite.print("$");
+  priceSprite.print((int)price);
+  priceSprite.pushSprite(8, 58);
 }
 
 // ===== 🆕 REQUÊTE PRIX SÉPARÉE =====
@@ -367,31 +377,12 @@ void setup() {
   pinMode(TFT_BL, OUTPUT);
   digitalWrite(TFT_BL, HIGH);
   tft.init();
-  tft.invertDisplay(true); // Invert display for ST7789
-  // Initialize display and auto-detect rotation so the UI is shown in landscape
-  tft.init();
-  tft.fillScreen(COLOR_BG);
-  // Try rotations 0..3 and pick one where width > height (landscape)
-  int chosenRotation = 0;
-  for (int r = 0; r < 4; r++) {
-    tft.setRotation(r);
-    // allow driver to apply rotation
-    delay(50);
-    int w = tft.width();
-    int h = tft.height();
-    if (w > h) {
-      chosenRotation = r;
-      break;
-    }
-  }
-  // If auto-detect failed (driver may report static width/height), fallback to rotation 1
-  // which commonly maps to landscape on many modules. Log chosen rotation for debugging.
-  chosenRotation = 1; // Force rotation 1 (90°) for landscape
-  Serial.printf("[INIT] FORCED rotation -> %d\n", chosenRotation);
-  // Ensure rotation is applied
-  tft.setRotation(chosenRotation);
-  Serial.printf("[INIT] TFT rotation set to %d (w=%d h=%d)\n", chosenRotation, tft.width(), tft.height());
-  tft.fillScreen(COLOR_BG);
+  // Rotation fixe paysage (landscape)
+  tft.setRotation(1);
+  // Créer le sprite pour l'affichage du prix (antiflicker, 172x35px)
+  priceSprite.setColorDepth(16);
+  priceSprite.createSprite(172, 35);
+  tft.fillScreen(COLOR_GREEN);
   
   tft.setTextColor(COLOR_CYAN);
   tft.setTextSize(2);
@@ -401,8 +392,7 @@ void setup() {
   
   SPI.begin(TOUCH_CLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin();
-  // Sync touchscreen rotation with the TFT rotation
-  touch.setRotation(chosenRotation);
+  touch.setRotation(1); // sync avec tft.setRotation(1) — landscape
   
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
@@ -459,13 +449,19 @@ void loop() {
   
   message_timer.check();
   
+  static bool wifi_reconnect_pending = false;
   if (WiFi.status() != WL_CONNECTED) {
-    showError("WiFi perdu");
-    message_timer.set(3000, []() {
-      connectWiFi();
-    });
+    if (!wifi_reconnect_pending) {
+      wifi_reconnect_pending = true;
+      showError("WiFi perdu");
+      message_timer.set(3000, []() {
+        wifi_reconnect_pending = false;
+        connectWiFi();
+      });
+    }
     return;
   }
+  wifi_reconnect_pending = false;
   
   handleTouch();
   updateLedPnl();
@@ -556,8 +552,7 @@ void handleNavigation(int x, int y) {
   } else if (NAV_POSITIONS.contains(x, y)) {
     new_screen = SCREEN_POSITIONS;
   } else if (NAV_HISTORY.contains(x, y)) {
-    getDepositHistory();
-    return;
+    new_screen = SCREEN_HISTORY;
   }
   
   if (new_screen != current_screen) {
@@ -718,7 +713,7 @@ void updateWalletBalance() {
   String response = makeAuthenticatedRequest("GET", "/account", "");
   
   if (response != "") {
-    walletCache.set(response, 15000);
+    walletCache.markValid(15000);
     
     JsonDocument doc;
     if (deserializeJson(doc, response) == DeserializationError::Ok) {
@@ -739,16 +734,16 @@ void updateRunningTrades() {
   String response = makeAuthenticatedRequest("GET", "/futures/isolated/trades/running", "");
   
   if (response != "") {
-    positionsCache.set(response, 10000);
+    positionsCache.markValid(10000);
     
     running_trades_count = 0;
     margin_in_positions = 0;
     
     for (int i = 0; i < 5; i++) {
-      running_trades_details[i] = "";
+      running_trades_details[i][0] = '\0';
       running_trades_pnl[i] = 0.0;
       running_trades_pnl_sats[i] = 0;
-      running_trades_ids[i] = "";
+      running_trades_ids[i][0] = '\0';
       running_trades_entry[i] = 0.0;
       running_trades_leverage[i] = 0;
       running_trades_margin[i] = 0;
@@ -765,14 +760,15 @@ void updateRunningTrades() {
         margin_in_positions += margin;
         
         if (idx < 5) {
-          running_trades_ids[idx] = trade["id"].as<String>();
+          strlcpy(running_trades_ids[idx], trade["id"].as<String>().c_str(), sizeof(running_trades_ids[0]));
           running_trades_margin[idx] = margin;
           running_trades_leverage[idx] = trade["leverage"].as<int>();
           running_trades_entry[idx] = trade["entryPrice"].as<float>();
           running_trades_pnl_sats[idx] = trade["pl"].as<long>();
-          
+
           String side = trade["side"].as<String>();
-          running_trades_details[idx] = side + " " + String(running_trades_leverage[idx]) + "x " + String(margin) + "s";
+          snprintf(running_trades_details[idx], sizeof(running_trades_details[0]),
+                   "%s %dx %lds", side.c_str(), running_trades_leverage[idx], margin);
           
           float pnl_percent = (margin > 0) ? (running_trades_pnl_sats[idx] / (float)margin) * 100.0 : 0;
           running_trades_pnl[idx] = pnl_percent;
@@ -791,12 +787,12 @@ void updateOpenOrders() {
   String response = makeAuthenticatedRequest("GET", "/futures/isolated/trades/open", "");
   
   if (response != "") {
-    ordersCache.set(response, 12000);
+    ordersCache.markValid(12000);
     
     open_orders_count = 0;
     for (int i = 0; i < 5; i++) {
-      open_orders_details[i] = "";
-      open_orders_ids[i] = "";
+      open_orders_details[i][0] = '\0';
+      open_orders_ids[i][0] = '\0';
     }
     
     JsonDocument doc;
@@ -807,14 +803,15 @@ void updateOpenOrders() {
       int idx = 0;
       for (JsonVariant order : orders) {
         if (idx < 5) {
-          open_orders_ids[idx] = order["id"].as<String>();
+          strlcpy(open_orders_ids[idx], order["id"].as<String>().c_str(), sizeof(open_orders_ids[0]));
           String side = order["side"].as<String>();
           String type = order["type"].as<String>();
           int leverage = order["leverage"].as<int>();
           long margin = order["margin"].as<long>();
           float price = order["price"].as<float>();
-          
-          open_orders_details[idx] = side + " " + type + " " + String(leverage) + "x " + String(margin) + "s @" + String((int)price);
+
+          snprintf(open_orders_details[idx], sizeof(open_orders_details[0]),
+                   "%s %s %dx %lds @%d", side.c_str(), type.c_str(), leverage, margin, (int)price);
           idx++;
         }
       }
@@ -829,13 +826,13 @@ void updateClosedTrades() {
   String response = makeAuthenticatedRequest("GET", "/futures/isolated/trades/closed", "limit=10");
   
   if (response != "") {
-    historyCache.set(response, 60000);
+    historyCache.markValid(60000);
     
     closed_trades_count = 0;
     for (int i = 0; i < 10; i++) {
-      closed_trades_details[i] = "";
+      closed_trades_details[i][0] = '\0';
       closed_trades_pnl[i] = 0.0;
-      closed_trades_dates[i] = "";
+      closed_trades_dates[i][0] = '\0';
     }
     
     JsonDocument doc;
@@ -852,13 +849,12 @@ void updateClosedTrades() {
           long pl = trade["pl"].as<long>();
           String closedAt = trade["closedAt"].as<String>();
           
-          if (closedAt.length() > 10) {
-            closedAt = closedAt.substring(0, 10);
-          }
-          
-          closed_trades_details[idx] = side + " " + String(leverage) + "x " + id.substring(0, 8) + "...";
+          snprintf(closed_trades_details[idx], sizeof(closed_trades_details[0]),
+                   "%s %dx %.8s...", side.c_str(), leverage, id.c_str());
           closed_trades_pnl[idx] = pl / 1000.0;
-          closed_trades_dates[idx] = closedAt;
+          // Tronquer la date à 10 chars (YYYY-MM-DD)
+          snprintf(closed_trades_dates[idx], sizeof(closed_trades_dates[0]),
+                   "%.10s", closedAt.c_str());
           idx++;
         }
       }
@@ -1118,7 +1114,7 @@ void showPositionsScreen() {
     y_pos += 5;
     
     for (int i = 0; i < running_trades_count && i < 5; i++) {
-      if (running_trades_details[i] == "") break;
+      if (running_trades_details[i][0] == '\0') break;
       
       tft.setTextColor(TFT_WHITE);
       tft.setTextSize(1);
@@ -1175,7 +1171,7 @@ void showPositionsScreen() {
     y_pos += 15;
     
     for (int i = 0; i < open_orders_count && i < 5; i++) {
-      if (open_orders_details[i] == "") break;
+      if (open_orders_details[i][0] == '\0') break;
       
       tft.setTextColor(TFT_WHITE);
       tft.setTextSize(1);
@@ -1230,7 +1226,7 @@ void showHistoryScreen() {
   } else {
     int y_pos = 80;
     for (int i = 0; i < closed_trades_count && i < 10; i++) {
-      if (closed_trades_details[i] == "") break;
+      if (closed_trades_details[i][0] == '\0') break;
       
       tft.setTextColor(TFT_WHITE);
       tft.setTextSize(1);
@@ -1264,12 +1260,9 @@ void getDepositAddress() {
   
   if (deposit_lnaddress == "") {
     showMessage("Adresse non configurée", COLOR_RED, 3000);
-    message_timer.set(3000, []() {
-      switchScreen(SCREEN_WALLET);
-    });
     return;
   }
-  
+
   // Utiliser QR code local avec QRCode library
   showDepositManagementScreen();
 }
@@ -1278,12 +1271,9 @@ void getDepositAddress() {
 void showDepositManagementScreen() {
   if (deposit_lnaddress == "") {
     showMessage("Adresse non configurée", COLOR_RED, 3000);
-    message_timer.set(3000, []() {
-      switchScreen(SCREEN_WALLET);
-    });
     return;
   }
-  
+
   Serial.println("📥 Génération QR code dépôt...");
   
   if (xSemaphoreTake(tft_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -1361,7 +1351,7 @@ void showDepositQRScreen(String address) {
   
   HTTPClient http;
   http.begin(qrUrl);
-  http.setTimeout(30000);
+  http.setTimeout(5000);
   
   int httpCode = http.GET();
   
@@ -1379,20 +1369,31 @@ void showDepositQRScreen(String address) {
     return;
   }
   
-  uint8_t* imageBuffer = (uint8_t*)imageData.c_str();
-  
+  size_t imgLen = imageData.length();
+  // Copier dans un buffer local puis libérer la String AVANT malloc
+  // pour éviter la double-allocation (~50KB String + ~50KB malloc simultanément)
+  uint8_t* imageBuffer = (uint8_t*)malloc(imgLen);
+  if (!imageBuffer) {
+    imageData = "";
+    showMessage("Memoire insuffisante", COLOR_RED, 2000);
+    return;
+  }
+  memcpy(imageBuffer, imageData.c_str(), imgLen);
+  imageData = ""; // libère la String AVANT le decode PNG
+
   if (xSemaphoreTake(tft_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
     tft.fillRect(qrX, qrY, 150, 150, TFT_BLACK);
-    
-    int result = pngGlobal.openRAM(imageBuffer, imageData.length(), pngDraw);
-    
+
+    int result = pngGlobal.openRAM(imageBuffer, imgLen, pngDraw);
+
     if (result == PNG_SUCCESS) {
       pngGlobal.decode(NULL, 0);
       pngGlobal.close();
     }
-    
+
     xSemaphoreGive(tft_mutex);
   }
+  free(imageBuffer);
   
   Serial.println("✅ QR PNG affiché");
   
@@ -1455,28 +1456,39 @@ void getDepositHistory() {
     return;
   }
   
-  showMessage("Loading deposits...", COLOR_CYAN, 0);
-  
+  // Vérifier le cache avant la requête réseau
+  if (depositsCache.isValid()) {
+    showDepositHistoryScreen();
+    return;
+  }
+
+  // Affichage "Loading" sans timer (dessin direct, pas de message_timer)
+  if (xSemaphoreTake(tft_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_CYAN);
+    tft.setTextSize(2);
+    tft.setCursor(40, 100);
+    tft.println("Loading...");
+    xSemaphoreGive(tft_mutex);
+  }
+
   lightning_deposits_count = 0;
   for (int i = 0; i < 10; i++) {
-    lightning_deposits_details[i] = "";
+    lightning_deposits_details[i][0] = '\0';
     lightning_deposits_amounts[i] = 0;
-    lightning_deposits_dates[i] = "";
-    lightning_deposits_hashes[i] = "";
-    lightning_deposits_comments[i] = "";
+    lightning_deposits_dates[i][0] = '\0';
+    lightning_deposits_hashes[i][0] = '\0';
+    lightning_deposits_comments[i][0] = '\0';
   }
   
   String response = makeAuthenticatedRequest("GET", "/account/deposits/lightning", "limit=10");
   
   if (response == "") {
     showMessage("Erreur API", COLOR_RED, 2000);
-    message_timer.set(2000, []() {
-      switchScreen(SCREEN_WALLET);
-    });
     return;
   }
   
-  StaticJsonDocument<512> doc;
+  JsonDocument doc; // ArduinoJson v7 dynamique — évite la troncature (réponse peut dépasser 512 bytes)
   if (deserializeJson(doc, response) == DeserializationError::Ok && doc["data"].is<JsonArray>()) {
     JsonArray deposits = doc["data"];
     lightning_deposits_count = deposits.size();
@@ -1487,23 +1499,22 @@ void getDepositHistory() {
         String id = deposit["id"].as<String>();
         long amount = deposit["amount"].as<long>();
         String createdAt = deposit["createdAt"].as<String>();
-        
-        if (createdAt.length() > 10) {
-          createdAt = createdAt.substring(0, 10);
-        }
-        
+
         lightning_deposits_amounts[idx] = amount;
-        lightning_deposits_dates[idx] = createdAt;
-        lightning_deposits_hashes[idx] = deposit["paymentHash"].as<String>();
-        lightning_deposits_comments[idx] = deposit["comment"].as<String>();
-        lightning_deposits_details[idx] = String(amount) + " sats - " + id.substring(0, 8) + "...";
+        // Tronquer la date à 10 chars (YYYY-MM-DD)
+        snprintf(lightning_deposits_dates[idx], sizeof(lightning_deposits_dates[0]),
+                 "%.10s", createdAt.c_str());
+        strlcpy(lightning_deposits_hashes[idx], deposit["paymentHash"].as<String>().c_str(), sizeof(lightning_deposits_hashes[0]));
+        strlcpy(lightning_deposits_comments[idx], deposit["comment"].as<String>().c_str(), sizeof(lightning_deposits_comments[0]));
+        snprintf(lightning_deposits_details[idx], sizeof(lightning_deposits_details[0]),
+                 "%ld sats - %.8s...", amount, id.c_str());
         
         idx++;
       }
     }
   }
   
-  message_timer.cancel();
+  depositsCache.markValid(60000);
   showDepositHistoryScreen();
 }
 
@@ -1536,7 +1547,7 @@ void showDepositHistoryScreen() {
       tft.println("No deposits");
     } else {
       int y_pos = 80;
-      for (int i = 0; i < 8 && lightning_deposits_details[i] != ""; i++) {
+      for (int i = 0; i < 8 && lightning_deposits_details[i][0] != '\0'; i++) {
         tft.setTextColor(TFT_WHITE);
         tft.setTextSize(1);
         tft.setCursor(10, y_pos);
@@ -1551,11 +1562,14 @@ void showDepositHistoryScreen() {
         tft.setCursor(10, y_pos + 12);
         tft.print(lightning_deposits_dates[i]);
         
-        if (lightning_deposits_comments[i] != "" && lightning_deposits_comments[i] != "null") {
+        if (lightning_deposits_comments[i][0] != '\0' && strcmp(lightning_deposits_comments[i], "null") != 0) {
           tft.setTextColor(TFT_YELLOW);
           tft.setCursor(100, y_pos + 12);
-          String comment = lightning_deposits_comments[i];
-          if (comment.length() > 15) comment = comment.substring(0, 12) + "...";
+          char comment[36];
+          strlcpy(comment, lightning_deposits_comments[i], sizeof(comment));
+          if (strlen(comment) > 15) {
+            comment[12] = '.'; comment[13] = '.'; comment[14] = '.'; comment[15] = '\0';
+          }
           tft.print(comment);
         }
         
@@ -1753,7 +1767,7 @@ String makeAuthenticatedRequest(String method, String path, String data) {
     http.addHeader("LNM-ACCESS-SIGNATURE", signature);
   }
   
-  int httpCode;
+  int httpCode = -1;
   if (method == "GET") {
     httpCode = http.GET();
   } else if (method == "POST") {
@@ -2297,11 +2311,14 @@ void testAPIConnection() {
 
 // ===== SHOW ERROR =====
 void showError(String msg) {
-  tft.fillScreen(COLOR_BG);
-  tft.setTextColor(COLOR_RED);
-  tft.setTextSize(2);
-  tft.setCursor(20, 100);
-  tft.println(msg);
+  if (xSemaphoreTake(tft_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+    tft.fillScreen(COLOR_BG);
+    tft.setTextColor(COLOR_RED);
+    tft.setTextSize(2);
+    tft.setCursor(20, 100);
+    tft.println(msg);
+    xSemaphoreGive(tft_mutex);
+  }
 }
 
 // ===== SECURITY FUNCTIONS =====
@@ -2355,8 +2372,8 @@ String xorDecrypt(String data) {
 
 // ===== 🆕 AES ENCRYPT/DECRYPT (pour compatibilité legacy) =====
 String encryptData(const char* plaintext, size_t plaintextLen) {
-  static uint8_t paddedPlaintext[256];
-  static uint8_t encrypted[256];
+  uint8_t paddedPlaintext[256];
+  uint8_t encrypted[256];
   
   if (plaintextLen > 200) return "";
   
@@ -2396,8 +2413,8 @@ String encryptData(const char* plaintext, size_t plaintextLen) {
 }
 
 String decryptData(const char* ciphertext, size_t ciphertextLen) {
-  static uint8_t encrypted[256];
-  static uint8_t decrypted[256];
+  uint8_t encrypted[256];
+  uint8_t decrypted[256];
   
   uint8_t key[32];
   deriveEncryptionKey(key, sizeof(key));
