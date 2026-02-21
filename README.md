@@ -1,380 +1,425 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/Platform-ESP32-blue?style=for-the-badge&logo=espressif&logoColor=white"/>
+<img src="https://img.shields.io/badge/Platform-ESP32-E7352C?style=for-the-badge&logo=espressif&logoColor=white"/>
 <img src="https://img.shields.io/badge/Framework-Arduino-00979D?style=for-the-badge&logo=arduino&logoColor=white"/>
-<img src="https://img.shields.io/badge/PlatformIO-Compatible-orange?style=for-the-badge&logo=platformio&logoColor=white"/>
-<img src="https://img.shields.io/badge/Display-ST7789%20320x240-purple?style=for-the-badge"/>
+<img src="https://img.shields.io/badge/PlatformIO-Compatible-F5822A?style=for-the-badge&logo=platformio&logoColor=white"/>
+<img src="https://img.shields.io/badge/Display-ST7789%20320×240-8A2BE2?style=for-the-badge"/>
 <img src="https://img.shields.io/badge/Bitcoin-Lightning-F7931A?style=for-the-badge&logo=bitcoin&logoColor=white"/>
-<img src="https://img.shields.io/badge/Release-v1.0.0-green?style=for-the-badge"/>
-<img src="https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge"/>
+<img src="https://img.shields.io/badge/Release-v2.1.0-22C55E?style=for-the-badge"/>
+<img src="https://img.shields.io/badge/License-MIT-FACC15?style=for-the-badge"/>
 
-# DegenBeat — LN Markets Touch Terminal
+# ⚡ DegenBeat
 
-### Terminal de trading Bitcoin sur ESP32 avec écran tactile 320×240, QR code de dépôt Lightning, indicateur P&L LED RGB, et connexion sécurisée à l'API LN Markets v3.
+### A standalone Bitcoin trading terminal built on ESP32.<br/>Touch screen · Lightning deposits · Live P&L RGB LED · LN Markets API v3.
 
 </div>
 
 ---
 
-## Table des matières
+## Table of Contents
 
-- [Vue d'ensemble](#vue-densemble)
-- [Matériel requis](#matériel-requis)
-- [Fonctionnalités](#fonctionnalités)
-- [Captures d'écran](#captures-décran)
+- [Overview](#overview)
+- [Hardware](#hardware)
+- [Features](#features)
+- [Screen Layout](#screen-layout)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Utilisation](#utilisation)
-- [LED RGB — Indicateur P\&L](#led-rgb--indicateur-pl)
-- [Architecture technique](#architecture-technique)
-- [Performances RAM](#performances-ram)
-- [Dépannage](#dépannage)
-- [Licence](#licence)
+- [Usage](#usage)
+- [Adaptive RGB LED](#adaptive-rgb-led)
+- [Technical Architecture](#technical-architecture)
+- [RAM Budget](#ram-budget)
+- [Troubleshooting](#troubleshooting)
+- [Libraries](#libraries)
+- [License](#license)
 
 ---
 
-## Vue d'ensemble
+## Overview
 
-**DegenBeat** est un terminal de trading autonome qui transforme un ESP32 Sunton 2432S028R en station de trading Bitcoin directement connectée à [LN Markets](https://lnmarkets.com). Il affiche le prix BTC en temps réel, permet d'ouvrir/fermer des positions à effet de levier, de déposer via Lightning Network, de consulter l'historique des trades — le tout depuis un écran tactile 3,2 pouces, sans ordinateur.
+**DegenBeat** turns a Sunton ESP32-2432S028R into a self-contained Bitcoin trading station. It connects directly to [LN Markets](https://lnmarkets.com) over WiFi, shows a live BTC price updated every 2 seconds, lets you open and close leveraged positions with a single tap, generate Lightning deposit QR codes on-device, and visualizes your aggregate P&L in real time through the built-in RGB LED — all without a phone or computer.
+
+Everything runs on a single `main.cpp` file with FreeRTOS dual-core scheduling, non-blocking timers, a 6-layer API cache, and AES-256-CBC credential storage on SPIFFS.
+
+---
+
+## Hardware
+
+| Component | Part | Notes |
+|-----------|------|-------|
+| MCU | **Sunton ESP32-2432S028R** | WROOM-32, 4MB flash, 520KB RAM, no PSRAM |
+| Display | **ST7789 IPS 320×240** | Built-in, dedicated SPI bus |
+| Touch | **XPT2046** | Separate SPI bus from TFT |
+| RGB LED | **Common-cathode RGB** | Pins 4 (R) · 16 (G) · 17 (B) |
+| WiFi | **802.11 b/g/n 2.4GHz** | WPA2 — captive portal built-in |
+
+> **This firmware targets the Sunton ESP32-2432S028R exclusively.** Pin mapping, SPI bus assignments, and driver flags are hard-coded for this board. Other ESP32 boards require pin and driver changes.
+
+### Pin Reference
 
 ```
-┌─────────────────────────────────────────┐
-│  HOME  │ WALLET │  POS   │    HIST      │  ← Barre navigation tactile
-├─────────────────────────────────────────┤
-│  BITCOIN PRICE                          │
-│  $97,420          [SELL] [BUY]          │  ← Prix live + boutons trade
-│                                         │
-│  LEVERAGE:  [25x] [50x] [75x] [100x]   │  ← Sélection levier
-│  QUICK: [100s] [500s] [1000s] [5000s]  │  ← Montants rapides
-│  MARGIN: 1000 sats  [−] [+]            │  ← Ajustement montant
-│  [======= EXECUTE TRADE =========]     │  ← Bouton exécution
-└─────────────────────────────────────────┘
+TFT  — MOSI:13  MISO:12  SCLK:14  CS:15  DC:2   RST:-1  BL:21
+Touch — MOSI:32  MISO:39  SCLK:25  CS:33  IRQ:36
+LED  — R:4   G:16   B:17
 ```
 
 ---
 
-## Matériel requis
-
-| Composant | Référence | Notes |
-|-----------|-----------|-------|
-| Microcontrôleur | **Sunton ESP32-2432S028R** | ESP32 WROOM-32, SPIFFS 4MB |
-| Écran | **ST7789 320×240 IPS** | Intégré — câblage SPI dédié |
-| Tactile | **XPT2046** | SPI séparé du TFT |
-| LED | **RGB commun cathode** | Pins 4 (R), 16 (G), 17 (B) |
-| Connectivité | **WiFi 2.4GHz** | WPA2 — portail captif intégré |
-
-> **Compatible uniquement** avec le Sunton ESP32-2432S028R (références SD_CS, pin mapping TFT/touch spécifiques). D'autres boards ESP32 nécessitent un recâblage.
-
----
-
-## Fonctionnalités
+## Features
 
 ### Trading
-- **Prix BTC temps réel** — mise à jour toutes les 2 secondes via tâche FreeRTOS dédiée (Core 0)
-- **Ouverture de positions** — SELL / BUY avec levier 25×, 50×, 75×, 100×
-- **Montants rapides** — 100, 500, 1000, 5000 sats + ajustement fin ±100 sats
-- **Fermeture de positions** — bouton CLOSE par position dans l'onglet POS
-- **Annulation d'ordres** — bouton CANCEL par ordre ouvert
-- **Historique** — 10 derniers trades fermés avec P&L et date
+- Live BTC/USD price — refreshed every 2 s via a dedicated FreeRTOS task (Core 0)
+- Market orders — SELL / BUY with 25×, 50×, 75×, or 100× leverage
+- Quick amounts — 100, 500, 1 000, 5 000 sats presets + fine ±100 sats adjustment
+- Close running positions — tap CLOSE per trade on the POS screen
+- Cancel open orders — tap CANCEL per order on the POS screen
+- Trade history — last 10 closed trades with side, leverage, P&L, and date
 
 ### Wallet & Lightning
-- **Solde en temps réel** — balance en sats + conversion USD
-- **Retrait Lightning** — montants rapides + ajustement, vers adresse Lightning configurée
-- **Dépôt QR code** — génération locale via librairie QRCode (pas de dépendance web)
-- **Historique des dépôts** — 10 derniers dépôts Lightning avec montant, date, commentaire, hash
+- Live balance — sats balance + live USD equivalent
+- Lightning withdrawal — configurable amount sent to your Lightning address
+- Deposit QR code — generated **locally** on-device via the QRCode library (no web dependency)
+- Deposit history — last 10 Lightning deposits with amount, date, comment, and payment hash
 
 ### Infrastructure
-- **Portail captif WiFi** — configuration réseau + API sans code via navigateur web
-- **SPIFFS chiffré** — credentials API stockés avec AES-256-CBC (clé dérivée depuis MAC ESP32)
-- **Cache intelligent** — 6 niveaux de cache API (2s prix, 15s wallet, 10s positions…)
-- **Reconnexion WiFi automatique** — non-bloquante via timer callback
-- **Indicateur LED RGB** — 7 niveaux de P&L visualisés en clignotements colorés
+- **WiFi captive portal** — configure network + API credentials from any browser, no code needed
+- **Encrypted credentials** — AES-256-CBC storage on SPIFFS, key derived from the ESP32 MAC address
+- **6-layer API cache** — avoids redundant network calls between screen refreshes
+- **Non-blocking WiFi watchdog** — auto-reconnect via timer callback, never freezes the UI
+- **Adaptive RGB LED** — live P&L indicator with 7 distinct blink patterns (see below)
 
 ---
 
-## Captures d'écran
+## Screen Layout
 
 ```
-┌──────────────────────┐    ┌──────────────────────┐
-│ HOME  WALLET POS HIST│    │ HOME  WALLET POS HIST│
-│                      │    │                      │
-│  BITCOIN PRICE       │    │  Balance: 24,500 sats│
-│  $97,420    [SELL]   │    │  ≈ $23.80 USD        │
-│             [BUY ]   │    │  Margin: 12,000 sats │
-│  LEVERAGE:           │    │  Retrait: 1000 sats  │
-│  [25x][50x][75x][100]│    │  [100][500][1000][2k]│
-│  QTY: 1000 sats [-][+│    │  [WITHDRAW][DEPOSIT] │
-│  [====EXECUTE====]   │    │  [HISTORY] [RESET]   │
-└──────────────────────┘    └──────────────────────┘
-        HOME                        WALLET
+┌──────────────────────────────────────────────────────┐
+│  HOME  │  WALLET  │   POS   │   HIST                 │  ← 4-zone tap bar
+├──────────────────────────────────────────────────────┤
 
-┌──────────────────────┐    ┌──────────────────────┐
-│ HOME  WALLET POS HIST│    │ HOME  WALLET POS HIST│
-│ POSITIONS & ORDERS   │    │   TRADE HISTORY      │
-│ RUNNING POSITIONS:   │    │                      │
-│ buy 50x 2000s        │    │ buy 25x 9a3f2b1c...  │
-│ Entry:$95k Now:$97k  │    │ +2.45 sats  2025-01  │
-│ +1042s +52.1%        │    │ sell 100x 3b7e9d2a.. │
-│ [CLOSE]              │    │ -890 sats   2025-01  │
-│ OPEN ORDERS:         │    │                      │
-│ buy limit 25x 1000s  │    │                      │
-│ [CANCEL]             │    │                      │
-└──────────────────────┘    └──────────────────────┘
-       POSITIONS                    HISTORY
+  HOME                           WALLET
+  ┌────────────────────────┐     ┌────────────────────────┐
+  │ BITCOIN PRICE          │     │ Balance: 24 500 sats    │
+  │ $97 420     [SELL]     │     │ ≈ $23.80 USD            │
+  │             [BUY ]     │     │ Margin in positions:    │
+  │ LEVERAGE:              │     │ 12 000 sats             │
+  │ [25x][50x][75x][100x]  │     │ Withdraw amount: 1 000s │
+  │ QUICK: [100][500][1000]│     │ [100][500][1000][2000]  │
+  │ MARGIN: 1000s  [-][+]  │     │ [-][+]                  │
+  │ [======EXECUTE======]  │     │ [WITHDRAW][DEPOSIT]     │
+  └────────────────────────┘     │ [HISTORY] [RESET]       │
+                                 └────────────────────────┘
+
+  POSITIONS                      HISTORY
+  ┌────────────────────────┐     ┌────────────────────────┐
+  │ RUNNING POSITIONS:     │     │ TRADE HISTORY          │
+  │ buy 50x 2000s          │     │ buy 25x 9a3f2b1c...    │
+  │ Entry:$95k  Now:$97k   │     │ +2.45 sats  2025-01-30 │
+  │ +1042s  +52.1%         │     │ sell 100x 3b7e9d2a...  │
+  │ [CLOSE]                │     │ -890 sats   2025-01-28 │
+  │ OPEN ORDERS:           │     │ ...                    │
+  │ buy limit 25x 1000s    │     └────────────────────────┘
+  │ [CANCEL]               │
+  └────────────────────────┘
 ```
 
 ---
 
 ## Installation
 
-### Prérequis
+### Prerequisites
 
-- [PlatformIO IDE](https://platformio.org/install) (extension VSCode recommandée)
+- [PlatformIO](https://platformio.org/install) (VSCode extension recommended)
 - [Git](https://git-scm.com/)
-- Câble USB-C / Micro-USB selon votre board
+- USB cable for your board
 
-### 1. Cloner le dépôt
+### Clone & Flash
 
 ```bash
 git clone https://github.com/Silexperience210/DegenBeat.git
 cd DegenBeat
-```
 
-### 2. Ouvrir dans PlatformIO
-
-```bash
-# Via VSCode
-code .
-# Puis cliquer sur l'icône PlatformIO dans la barre latérale
-
-# Via CLI
-pio run --target upload
-```
-
-### 3. Compiler et flasher
-
-```bash
-# Compiler seulement
+# Build only
 pio run
 
-# Compiler + flasher
+# Build + upload
 pio run --target upload
 
-# Monitor série
+# Serial monitor
 pio device monitor --baud 115200
 ```
 
-> Le `platformio.ini` est préconfiguré pour le Sunton ESP32-2432S028R. **Ne pas modifier** les `build_flags` TFT sans connaître votre variante exacte.
+> The `platformio.ini` is pre-configured for the Sunton ESP32-2432S028R with the correct ST7789 driver flags, SPI pins, and DMA settings. Do not change `build_flags` unless you know your exact board variant.
 
 ---
 
 ## Configuration
 
-### Premier démarrage — Portail captif
+### First Boot — Captive Portal
 
-Au premier démarrage (ou après un RESET), le terminal crée un **point d'accès WiFi** :
+On first boot (or after a RESET), the terminal creates a WiFi access point:
 
 ```
-SSID  :  LNMarkets-Setup
-Mot de passe  :  (aucun)
-URL config    :  http://192.168.4.1
+SSID      :  LNMarkets-Setup
+Password  :  (none)
+Config URL:  http://192.168.4.1
 ```
 
-Connectez-vous à ce réseau WiFi depuis votre téléphone ou PC, votre navigateur s'ouvrira automatiquement sur le formulaire de configuration.
+Connect your phone or PC to this network. Your browser will open the configuration form automatically (captive portal). Fill in all fields and tap **Save** — the ESP32 reboots and connects.
 
-### Champs à renseigner
+### Configuration Fields
 
-| Champ | Description |
+| Field | Description |
 |-------|-------------|
-| **WiFi SSID** | Nom de votre réseau WiFi 2.4GHz |
-| **WiFi Password** | Mot de passe WiFi |
-| **API Key** | Clé API LN Markets (Réglages → API) |
-| **API Secret** | Secret API LN Markets |
-| **API Passphrase** | Passphrase API LN Markets |
-| **Lightning Address** | Votre adresse Lightning pour les retraits (ex: `you@wallet.com`) |
-| **Deposit LN Address** | Adresse Lightning de dépôt (affichée en QR code) |
+| **WiFi SSID** | Your 2.4 GHz network name |
+| **WiFi Password** | WiFi password |
+| **API Key** | LN Markets API key — Settings → API |
+| **API Secret** | LN Markets API secret |
+| **API Passphrase** | LN Markets API passphrase (min. 8 chars) |
+| **Lightning Address** | Your Lightning address for withdrawals (e.g. `you@wallet.com`) |
+| **Deposit LN Address** | Lightning address shown as QR code for deposits |
 
-### Obtenir les clés API LN Markets
+### Getting LN Markets API Keys
 
-1. Connectez-vous sur [lnmarkets.com](https://lnmarkets.com)
-2. Allez dans **Settings → API**
-3. Créez une nouvelle paire de clés avec les permissions : `Read`, `Trade`, `Withdraw`
-4. Notez la Key, Secret et Passphrase — ils ne seront plus affichés
+1. Log in at [lnmarkets.com](https://lnmarkets.com)
+2. Go to **Settings → API**
+3. Create a new key pair with permissions: `Read`, `Trade`, `Withdraw`
+4. Copy the Key, Secret, and Passphrase — they are shown only once
 
-> **Sécurité** : Les credentials sont stockés chiffrés en AES-256-CBC sur SPIFFS. La clé de chiffrement est dérivée depuis l'adresse MAC unique de l'ESP32.
+> **Security** — Credentials are stored AES-256-CBC encrypted on SPIFFS. The encryption key is derived from the unique ESP32 MAC address via PBKDF2. They are never transmitted in plain text.
 
-### Réinitialisation
+### Factory Reset
 
-Depuis l'écran **WALLET**, appuyez sur le bouton **RESET** (coin inférieur droit). L'ESP32 efface la configuration SPIFFS et redémarre en mode portail captif.
+From the **WALLET** screen, tap **RESET** (bottom-right corner). The device wipes the SPIFFS config file and reboots into captive portal mode.
 
 ---
 
-## Utilisation
+## Usage
 
 ### Navigation
 
-La barre du haut divise l'écran en 4 zones tactiles :
+The top bar is divided into 4 tap zones (80 px each):
 
-| Zone | Écran |
-|------|-------|
-| `HOME` (0–80px) | Prix BTC + ouverture de trade |
-| `WALLET` (80–160px) | Solde + dépôt/retrait |
-| `POS` (160–240px) | Positions actives + ordres ouverts |
-| `HIST` (240–320px) | Historique trades + dépôts Lightning |
+| Zone | Screen | Content |
+|------|--------|---------|
+| `HOME` | Main trading screen | Live BTC price, SELL/BUY, leverage, execute |
+| `WALLET` | Wallet screen | Balance, withdraw, deposit QR, deposit history |
+| `POS` | Positions screen | Running trades, open orders, close/cancel |
+| `HIST` | History screen | Last 10 closed trades with P&L and date |
 
-### Ouvrir un trade
+### Opening a Trade
 
-1. Aller sur **HOME**
-2. Appuyer **SELL** ou **BUY** (le bouton se met en couleur)
-3. Sélectionner le levier : `25x`, `50x`, `75x` ou `100x`
-4. Choisir un montant rapide ou ajuster avec `[−]` / `[+]`
-5. Appuyer **EXECUTE TRADE**
+1. Go to **HOME**
+2. Tap **SELL** or **BUY** — the selected button highlights in color
+3. Select leverage: `25x`, `50x`, `75x`, or `100x`
+4. Choose a quick amount or fine-tune with `[−]` / `[+]`
+5. Tap **EXECUTE TRADE**
 
-### Déposer en Lightning
+The trade is submitted as a market order. On success, all caches are invalidated and the screen refreshes with your new position.
 
-1. Aller sur **WALLET**
-2. Appuyer **DEPOSIT**
-3. Un QR code est généré localement depuis votre `deposit_lnaddress`
-4. Scanner depuis votre wallet Lightning pour envoyer des sats
+### Lightning Deposit
 
-### Retirer en Lightning
+1. Go to **WALLET** → tap **DEPOSIT**
+2. A QR code is generated locally from your configured `deposit_lnaddress`
+3. Scan from any Lightning wallet to send sats
 
-1. Aller sur **WALLET**
-2. Ajuster le montant de retrait (montants rapides ou `[−]` / `[+]`)
-3. Appuyer **WITHDRAW**
-4. Le retrait est envoyé vers votre `lightning_address` configurée
+### Lightning Withdrawal
 
----
-
-## LED RGB — Indicateur P&L
-
-La LED RGB intégrée reflète l'état de vos positions en temps réel :
-
-| LED | Signification |
-|-----|---------------|
-| **Éteinte** | Aucune position ouverte |
-| **Bleu fixe** | Connexion API active, pas de position |
-| **Clignotement lent** (1Hz) | P&L entre 0% et 5% |
-| **Clignotement normal** (2Hz) | P&L entre 5% et 25% |
-| **Clignotement rapide** (4Hz) | P&L entre 25% et 50% |
-| **Clignotement très rapide** (8Hz) | P&L entre 50% et 100% |
-| **Vert fixe** | P&L > 100% — Moon mode |
-| **Rouge fixe** | P&L < −100% — Liquidation imminente |
-
-> La LED est pilotée depuis `loop()` sans bloquer le rendu écran. La fréquence de clignotement est calculée dynamiquement sur le P&L moyen de toutes les positions actives.
+1. Go to **WALLET**
+2. Set the withdrawal amount (quick amounts or `[−]` / `[+]`)
+3. Tap **WITHDRAW** — the payment is sent to your configured `lightning_address`
 
 ---
 
-## Architecture technique
+## Adaptive RGB LED
 
-### FreeRTOS — Dual-core
+The built-in RGB LED is a **real-time position health indicator**. It reads the aggregated P&L across all your active positions every loop cycle and adjusts its behavior continuously — no manual interaction needed.
+
+### How P&L Is Computed
+
+The LED does not look at individual positions. It computes a single **portfolio P&L percentage** across all open trades:
 
 ```
-Core 0 (App)    │  Core 1 (Pro)
-────────────────┼────────────────────────────────────
-priceUpdateTask │  loop() → handleTouch() → switchScreen()
-  fetchBTCPrice │           updateLedPnl()
-  displayPrice()│           message_timer.check()
-  (toutes 2s)   │           WiFi watchdog non-bloquant
+portfolio_pnl% = (sum of all pl_sats) / (sum of all margins) × 100
 ```
 
-Le prix BTC est mis à jour en tâche séparée sur le Core 0 via `xTaskCreatePinnedToCore`, avec accès TFT protégé par mutex (`tft_mutex`).
+This means if you have three positions — one up 80%, one flat, one down 20% — the LED reflects the net result of your entire book.
 
-### Cache API
+### LED Behavior Map
 
-| Cache | TTL | Description |
-|-------|-----|-------------|
-| `priceCache` | 2s | Ticker BTC (tâche dédiée) |
-| `walletCache` | 15s | Solde du compte |
-| `positionsCache` | 10s | Trades en cours |
-| `ordersCache` | 12s | Ordres ouverts |
-| `historyCache` | 60s | Historique trades fermés |
-| `depositsCache` | 60s | Historique dépôts Lightning |
+| LED State | Color | Blink Period | P&L Condition |
+|-----------|-------|-------------|---------------|
+| **Off** | — | — | No open positions |
+| **Cyan double-pulse** | Cyan | Heartbeat | AP config mode (setup) |
+| **Slow blink** | Green / Red | 2 000 ms | \|P&L\| < 5% |
+| **Normal blink** | Green / Red | 1 000 ms | \|P&L\| 5% – 25% |
+| **Fast blink** | Green / Red | 500 ms | \|P&L\| 25% – 50% |
+| **Rapid blink** | Green / Red | 250 ms | \|P&L\| 50% – 75% |
+| **Frantic blink** | Green / Red | 125 ms | \|P&L\| 75% – 100% |
+| **Solid Green** | Green | Continuous | P&L ≥ +100% — moon mode |
+| **Solid Red** | Red | Continuous | P&L ≤ −100% — liquidation zone |
 
-La méthode `markValid()` marque le cache sans stocker la réponse JSON en heap — économise ~30–40 KB par cycle de refresh.
+**Color meaning:**
+- **Green** = portfolio P&L is positive (you are in profit)
+- **Red** = portfolio P&L is negative (you are in loss)
 
-### Système non-bloquant
+The blink speed reflects **how extreme** the move is. A slow green blink is a small gain — a frantic red blink at 125 ms means you're approaching −75% on your aggregate margin and should pay attention. Solid red at −100% is your last warning before liquidation.
 
-Toutes les temporisations utilisent `NonBlockingDelay` (callback-based timer), évitant tout `delay()` dans `loop()`. Le temps de réponse tactile reste sous 20ms même pendant un appel API.
+### Practical Examples
 
-### Affichage antiflicker
+```
+No positions open        →  LED off
+1 trade, +3% P&L         →  slow GREEN blink  (2s period)
+1 trade, −18% P&L        →  normal RED blink  (1s period)
+2 trades, net +40% P&L   →  fast GREEN blink  (500ms period)
+3 trades, net −60% P&L   →  rapid RED blink   (250ms period)
+1 trade, +200% P&L       →  solid GREEN
+1 trade, −110% P&L       →  solid RED  ← act fast
+```
 
-Le prix BTC est rendu via `TFT_eSprite` (sprite 172×35px, 16-bit color depth) : le rendu se fait en mémoire puis est poussé en une seule opération DMA vers l'écran, éliminant le flash visible du fillRect/print direct.
-
-### Sécurité API
-
-- Signature HMAC-SHA256 des requêtes (timestamp + method + path + body)
-- Stockage credentials AES-256-CBC, clé dérivée depuis MAC ESP32 via PBKDF2
-- Validation des champs API au formulaire de configuration
-- Timeout HTTP 5 secondes pour éviter les blocages réseau
+> The LED runs inside `loop()` on Core 1, updated every tick with zero blocking. It never interferes with screen rendering or API calls.
 
 ---
 
-## Performances RAM
+## Technical Architecture
 
-Budget mémoire sur ESP32 WROOM-32 (520 KB total, ~280 KB disponible après stack/libs) :
+### FreeRTOS Dual-Core Split
 
-| Poste | Avant optim | Après optim | Économie |
-|-------|------------|-------------|----------|
-| Cache API (6×) | ~45 KB (JSON strings) | ~1 KB (timestamps) | **~44 KB** |
-| Tableaux de données | ~3 KB (String heap) | ~2 KB (char BSS) | **~1 KB + no frag** |
-| TFT_eSprite prix | 0 | 172×35×2 = ~12 KB | −12 KB (budget sprite) |
+```
+Core 0 (App CPU)           Core 1 (Pro CPU)
+─────────────────────────  ─────────────────────────────────────
+priceUpdateTask            loop()
+  └─ fetchBTCPrice()         ├─ handleTouch()
+  └─ displayPrice()          │    ├─ handleNavigation()
+     (sprite push via DMA)   │    ├─ handleHomeTouch()
+  (every 2 000 ms)           │    ├─ handleWalletTouch()
+                             │    └─ handlePositionsTouch()
+                             ├─ updateLedPnl()
+                             ├─ message_timer.check()
+                             └─ WiFi watchdog (non-blocking)
+```
+
+TFT access from both cores is protected by `tft_mutex` (FreeRTOS mutex). The price task takes the mutex for ≤5 ms to push the sprite; the UI task takes it for full screen redraws.
+
+### Non-Blocking Timer System
+
+All delays use the `NonBlockingDelay` struct — a callback-based timer that fires from `loop()`:
+
+```cpp
+message_timer.set(2000, []() {
+    showing_message = false;
+    switchScreen(current_screen);
+});
+```
+
+There are zero `delay()` calls in the main execution path. Touch latency stays under 20 ms even during active HTTP requests.
+
+### API Cache
+
+| Cache | TTL | Endpoint |
+|-------|-----|----------|
+| `priceCache` | 2 s | `/v3/futures/ticker` |
+| `walletCache` | 15 s | `/v3/account` |
+| `positionsCache` | 10 s | `/v3/futures/isolated/trades/running` |
+| `ordersCache` | 12 s | `/v3/futures/isolated/trades/open` |
+| `historyCache` | 60 s | `/v3/futures/isolated/trades/closed` |
+| `depositsCache` | 60 s | `/v3/account/deposits/lightning` |
+
+`markValid()` stamps the cache without storing the JSON response in heap — the response is parsed immediately and the string is freed, saving 30–40 KB per refresh cycle.
+
+### Request Authentication
+
+Every API call is signed with HMAC-SHA256:
+
+```
+signature = HMAC-SHA256(api_secret, timestamp + method_lower + /v3/path + body)
+signature_b64 = base64(signature)
+```
+
+Headers: `LNM-ACCESS-KEY`, `LNM-ACCESS-PASSPHRASE`, `LNM-ACCESS-TIMESTAMP`, `LNM-ACCESS-SIGNATURE`.
+
+### Antiflicker Sprite Rendering
+
+The BTC price area (172×35 px) uses `TFT_eSprite`:
+
+```
+CPU renders into sprite buffer  →  single DMA push to TFT
+```
+
+This replaces the previous `fillRect()` + `print()` sequence which caused a visible white flash at every price update. The sprite push is atomic from the display's perspective.
+
+---
+
+## RAM Budget
+
+ESP32 WROOM-32: 520 KB total RAM. At rest after boot:
+
+| Item | Before v2.1.0 | After v2.1.0 | Delta |
+|------|--------------|-------------|-------|
+| API cache (6×) | ~45 KB (JSON strings in heap) | ~1 KB (timestamps only) | **−44 KB** |
+| Data arrays | ~3 KB (Arduino String heap) | ~2 KB (char[] in BSS) | **−1 KB + no fragmentation** |
+| Price sprite buffer | 0 | 172×35×2 = ~12 KB | −12 KB (new allocation) |
 | **Free heap at rest** | ~90 KB | **~130–150 KB** | **+40–60 KB** |
 
-> Sans PSRAM (WROOM-32). La fragmentation heap est réduite par la conversion `String[]` → `char[][]` et la non-rétention des réponses JSON en cache.
+No PSRAM available on WROOM-32. The `char[][]` conversion eliminates heap fragmentation from repeated Arduino `String` allocations across screen refreshes.
 
 ---
 
-## Dépannage
+## Troubleshooting
 
-### L'écran reste noir au boot
+### Screen stays black after boot
 
-- Vérifier que `TFT_BL` (pin 21) est bien `OUTPUT HIGH` dans `setup()`
-- Vérifier le câblage SPI TFT : MOSI=13, MISO=12, SCLK=14, CS=15, DC=2
-- S'assurer que le `platformio.ini` contient `-DST7789_DRIVER=1`
+- Check that pin 21 (`TFT_BL`) is set `OUTPUT HIGH` in `setup()`
+- Verify SPI pins: MOSI=13, MISO=12, SCLK=14, CS=15, DC=2
+- Confirm `platformio.ini` contains `-DST7789_DRIVER=1` and `-DTFT_INVERSION_OFF=1`
 
-### Les couleurs sont inversées / mauvaises
+### Colors are wrong or inverted
 
-- Le ST7789 du Sunton nécessite `-DTFT_RGB_ORDER=TFT_BGR` et `-DTFT_INVERSION_OFF=1`
-- Ne pas utiliser `ILI9341_DRIVER` — ce board utilise bien ST7789
+- This board requires `-DTFT_RGB_ORDER=TFT_BGR`
+- Do **not** use `ILI9341_DRIVER` — the Sunton 2432S028R uses ST7789
+- Do **not** call `tft.invertDisplay()` — it is handled by the build flag
 
-### Le tactile ne répond pas ou est décalé
+### Touch doesn't respond or is misaligned
 
-- La rotation touch doit être synchronisée avec la rotation TFT : `touch.setRotation(1)`
-- Vérifier SPI dédié touch : CLK=25, MISO=39, MOSI=32, CS=33, IRQ=36
+- Touch rotation must match TFT rotation: `touch.setRotation(1)`
+- Touch SPI uses dedicated pins: CLK=25, MISO=39, MOSI=32, CS=33, IRQ=36
 
-### L'API retourne des erreurs 401
+### API returns 401 Unauthorized
 
-- Régénérer les clés API sur lnmarkets.com (les clés ont une durée de vie)
-- Vérifier que la passphrase fait au moins 8 caractères
-- S'assurer que l'heure NTP est synchronisée (la signature HMAC inclut le timestamp)
+- Regenerate API keys on lnmarkets.com (keys expire)
+- Ensure passphrase is at least 8 characters
+- Verify NTP time sync — the HMAC signature includes a timestamp
 
-### "Erreur API" sur tous les écrans
+### "Erreur API" on all screens
 
-- Le WiFi est peut-être perdu : vérifier le message "WiFi perdu" sur l'écran
-- Vérifier le mode : si `api_key == "public"`, seul le prix BTC s'affiche, pas le wallet
+- WiFi may have dropped — check for "WiFi perdu" on screen
+- If `api_key == "public"`, only the BTC price displays; wallet/positions require real API keys
 
-### SPIFFS FAIL au démarrage
+### SPIFFS FAIL on boot
 
-- Reformater SPIFFS : `pio run --target uploadfs` puis re-flasher le firmware
-- Certains ESP32 clones ont SPIFFS désactivé — vérifier avec `SPIFFS.begin(true)` (format automatique)
+- Re-format: `pio run --target uploadfs`, then re-flash firmware
+- Some clone ESP32 boards ship with SPIFFS disabled; `SPIFFS.begin(true)` auto-formats on first call
 
----
+### LED stays off with open positions
 
-## Librairies utilisées
-
-| Librairie | Version | Usage |
-|-----------|---------|-------|
-| [TFT_eSPI](https://github.com/Bodmer/TFT_eSPI) | ^2.5.43 | Driver TFT + sprites |
-| [XPT2046_Touchscreen](https://github.com/PaulStoffregen/XPT2046_Touchscreen) | latest | Lecture touch |
-| [ArduinoJson](https://arduinojson.org/) | ^7.2.0 | Parse JSON API |
-| [QRCode](https://github.com/ricmoo/qrcode) | ^0.0.1 | Génération QR code local |
-| [PNGdec](https://github.com/bitbank2/PNGdec) | ^1.1.6 | Décodage PNG |
-| mbedTLS | (ESP-IDF) | AES-256-CBC + HMAC-SHA256 |
+- Positions data comes from `positionsCache` — wait up to 10 s for the first refresh
+- If balance shows 0 and positions are empty, check the API key permissions (`Trade` + `Read`)
 
 ---
 
-## Licence
+## Libraries
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| [TFT_eSPI](https://github.com/Bodmer/TFT_eSPI) | ^2.5.43 | TFT driver, sprites, DMA |
+| [XPT2046_Touchscreen](https://github.com/PaulStoffregen/XPT2046_Touchscreen) | latest | Resistive touch input |
+| [ArduinoJson](https://arduinojson.org/) | ^7.2.0 | JSON parsing (API responses) |
+| [QRCode](https://github.com/ricmoo/qrcode) | ^0.0.1 | On-device QR code generation |
+| [PNGdec](https://github.com/bitbank2/PNGdec) | ^1.1.6 | PNG image decoding |
+| mbedTLS | ESP-IDF built-in | AES-256-CBC, HMAC-SHA256 |
+
+---
+
+## License
 
 ```
 MIT License
@@ -406,9 +451,10 @@ SOFTWARE.
 
 **Built for degens, by degens.**
 
-*Le trading de produits dérivés Bitcoin avec effet de levier comporte un risque élevé de perte en capital. Ce projet est fourni à titre éducatif. Tradez responsablement.*
+*Leveraged Bitcoin trading carries significant risk of capital loss. This project is provided for educational purposes. Trade responsibly.*
 
 [![GitHub Stars](https://img.shields.io/github/stars/Silexperience210/DegenBeat?style=social)](https://github.com/Silexperience210/DegenBeat)
 [![GitHub Forks](https://img.shields.io/github/forks/Silexperience210/DegenBeat?style=social)](https://github.com/Silexperience210/DegenBeat/fork)
+[![GitHub Issues](https://img.shields.io/github/issues/Silexperience210/DegenBeat?style=social)](https://github.com/Silexperience210/DegenBeat/issues)
 
 </div>
