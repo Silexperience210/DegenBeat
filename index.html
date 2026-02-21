@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DegenBeat — Web Flasher</title>
+  <meta name="description" content="Flash DegenBeat firmware to your Sunton ESP32-2432S028R directly from your browser. No software needed." />
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    /* ===== RESET ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ===== BASE ===== */
+    :root {
+      --orange:  #F7931A;
+      --orange2: #E07010;
+      --bg:      #0A0A0F;
+      --surface: #12121A;
+      --card:    #1A1A26;
+      --border:  #2A2A3A;
+      --text:    #E8E8F0;
+      --muted:   #7070A0;
+      --green:   #22C55E;
+      --red:     #EF4444;
+      --cyan:    #22D3EE;
+      --glow:    rgba(247,147,26,0.18);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ===== GRID NOISE BACKGROUND ===== */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(247,147,26,0.12), transparent),
+        radial-gradient(ellipse 50% 40% at 80% 80%, rgba(34,211,238,0.05), transparent);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===== LAYOUT ===== */
+    .page { width: 100%; max-width: 760px; padding: 0 24px 80px; position: relative; z-index: 1; }
+
+    /* ===== HEADER ===== */
+    header {
+      text-align: center;
+      padding: 64px 0 48px;
+    }
+
+    .logo-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .logo-icon {
+      width: 52px; height: 52px;
+      background: linear-gradient(135deg, var(--orange), var(--orange2));
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 26px;
+      box-shadow: 0 0 32px var(--glow);
+    }
+
+    .logo-text {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(90deg, #fff 30%, var(--orange));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .tagline {
+      font-size: 1.15rem;
+      color: var(--muted);
+      max-width: 480px;
+      margin: 0 auto 24px;
+      line-height: 1.6;
+    }
+
+    .version-badge {
+      display: inline-block;
+      background: rgba(247,147,26,0.12);
+      border: 1px solid rgba(247,147,26,0.3);
+      color: var(--orange);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    /* ===== FLASH CARD ===== */
+    .flash-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      margin-bottom: 32px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03) inset;
+    }
+
+    .flash-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 24px;
+    }
+
+    /* ===== STEPS ===== */
+    .steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 36px;
+    }
+
+    .step {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+    }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 32px; height: 32px;
+      background: rgba(247,147,26,0.12);
+      border: 1px solid rgba(247,147,26,0.25);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--orange);
+    }
+
+    .step-body { padding-top: 4px; }
+
+    .step-label {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .step-desc {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .step-desc code {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      color: var(--cyan);
+    }
+
+    /* ===== INSTALL BUTTON WRAPPER ===== */
+    .install-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    esp-web-install-button {
+      --esp-tools-button-color: var(--orange);
+      --esp-tools-button-text-color: #000;
+    }
+
+    esp-web-install-button::part(button) {
+      background: linear-gradient(135deg, var(--orange), var(--orange2));
+      color: #000;
+      font-weight: 800;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+      padding: 16px 40px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      box-shadow: 0 4px 32px rgba(247,147,26,0.4);
+    }
+
+    esp-web-install-button::part(button):hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 40px rgba(247,147,26,0.5);
+    }
+
+    .browser-note {
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .browser-note a { color: var(--orange); text-decoration: none; }
+    .browser-note a:hover { text-decoration: underline; }
+
+    /* ===== REQUIREMENTS ALERT ===== */
+    .alert {
+      background: rgba(34,211,238,0.06);
+      border: 1px solid rgba(34,211,238,0.2);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 32px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .alert-icon { font-size: 1.1rem; flex-shrink: 0; margin-top: 1px; }
+
+    .alert-text {
+      font-size: 0.875rem;
+      color: var(--cyan);
+      line-height: 1.5;
+    }
+
+    .alert-text strong { color: #fff; }
+
+    /* ===== FEATURES GRID ===== */
+    .features {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    @media (max-width: 540px) { .features { grid-template-columns: 1fr; } }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 20px;
+    }
+
+    .feature-icon { font-size: 1.5rem; margin-bottom: 10px; }
+
+    .feature-title {
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .feature-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ===== LED SECTION ===== */
+    .led-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px 40px;
+      margin-bottom: 32px;
+    }
+
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .led-table { width: 100%; border-collapse: collapse; }
+
+    .led-table th {
+      text-align: left;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0 12px 12px;
+    }
+
+    .led-table td {
+      padding: 10px 12px;
+      font-size: 0.82rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .led-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    .led-label {
+      display: flex;
+      align-items: center;
+    }
+
+    .dot-off     { background: #333; border: 1px solid #555; }
+    .dot-cyan    { background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+    .dot-green   { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .dot-red     { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .dot-green-s { background: var(--green); box-shadow: 0 0 14px var(--green), 0 0 28px rgba(34,197,94,0.4); }
+    .dot-red-s   { background: var(--red); box-shadow: 0 0 14px var(--red), 0 0 28px rgba(239,68,68,0.4); }
+
+    .speed-bar {
+      display: inline-flex;
+      gap: 2px;
+      vertical-align: middle;
+    }
+
+    .bar { width: 6px; height: 14px; border-radius: 2px; background: var(--border); }
+    .bar.on { background: var(--orange); }
+
+    /* ===== FOOTER ===== */
+    footer {
+      text-align: center;
+      padding: 40px 0 0;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.8;
+    }
+
+    footer a { color: var(--orange); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    .disclaimer {
+      background: rgba(239,68,68,0.05);
+      border: 1px solid rgba(239,68,68,0.15);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.75rem;
+      color: #EF4444;
+      margin-top: 20px;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===== HEADER ===== -->
+  <header>
+    <div class="logo-wrap">
+      <div class="logo-icon">⚡</div>
+      <span class="logo-text">DegenBeat</span>
+    </div>
+    <p class="tagline">
+      Bitcoin trading terminal for the ESP32.<br/>
+      Flash your Sunton board directly from this page — no software needed.
+    </p>
+    <span class="version-badge">FIRMWARE v2.1.0</span>
+  </header>
+
+  <!-- ===== HARDWARE ALERT ===== -->
+  <div class="alert">
+    <span class="alert-icon">🔌</span>
+    <span class="alert-text">
+      <strong>Required hardware:</strong> Sunton ESP32-2432S028R (ST7789 320×240, XPT2046 touch, RGB LED).
+      This firmware is pinned to this board. It will not work correctly on other ESP32 variants.
+    </span>
+  </div>
+
+  <!-- ===== FLASH CARD ===== -->
+  <div class="flash-card">
+    <div class="flash-title">Flash Firmware</div>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-label">Connect your board</div>
+          <div class="step-desc">Plug the Sunton ESP32 into your PC via USB. No drivers needed on Windows 10+ / macOS / Linux.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-label">Click Install below</div>
+          <div class="step-desc">Your browser will ask to select a serial port — choose the one labeled <code>CP210x</code> or <code>CH340</code>.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-label">Wait ~30 seconds</div>
+          <div class="step-desc">The flasher writes bootloader, partition table, and firmware. The board reboots automatically when done.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-label">Connect to <code>LNMarkets-Setup</code></div>
+          <div class="step-desc">A WiFi access point appears. Open your browser, enter your WiFi credentials and LN Markets API keys.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="install-wrap">
+      <esp-web-install-button manifest="manifest.json">
+        <button slot="activate">⚡ Install DegenBeat</button>
+        <span slot="unsupported">
+          Your browser does not support WebUSB.
+          Use <a href="https://www.google.com/chrome/" target="_blank" rel="noopener">Chrome</a> or <a href="https://www.microsoft.com/edge" target="_blank" rel="noopener">Edge</a>.
+        </span>
+        <span slot="not-allowed">
+          Access denied. Make sure you are on HTTPS and the page is served (not opened as a local file).
+        </span>
+      </esp-web-install-button>
+      <p class="browser-note">
+        Requires Chrome or Edge (desktop).
+        <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.1.0" target="_blank" rel="noopener">
+          Download binaries manually →
+        </a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== FEATURES ===== -->
+  <div class="features">
+    <div class="feature-card">
+      <div class="feature-icon">₿</div>
+      <div class="feature-title">Live BTC Price</div>
+      <div class="feature-desc">Updates every 2 s via a dedicated FreeRTOS task. Antiflicker sprite rendering.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📈</div>
+      <div class="feature-title">Leveraged Trading</div>
+      <div class="feature-desc">Market orders at 25×, 50×, 75×, 100× on LN Markets with one tap.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-title">Lightning Deposits</div>
+      <div class="feature-desc">QR code generated on-device. No web dependency. Instant scan & pay.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔐</div>
+      <div class="feature-title">Encrypted Storage</div>
+      <div class="feature-desc">API keys stored AES-256-CBC on SPIFFS. Key derived from your ESP32 MAC.</div>
+    </div>
+  </div>
+
+  <!-- ===== LED SECTION ===== -->
+  <div class="led-section">
+    <div class="section-title">
+      <span>🔴</span> Adaptive RGB LED — Live P&amp;L Indicator
+    </div>
+    <p style="font-size:0.85rem;color:var(--muted);margin-bottom:20px;line-height:1.6;">
+      The built-in RGB LED reflects your <strong style="color:var(--text)">aggregate portfolio P&amp;L</strong>
+      across all open positions in real time — updated every loop cycle, no interaction needed.
+      Blink speed scales with how extreme the move is. Color tells you the direction.
+    </p>
+
+    <table class="led-table">
+      <thead>
+        <tr>
+          <th>LED</th>
+          <th>Pattern</th>
+          <th>P&amp;L Condition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-off"></span>Off</div></td>
+          <td style="color:var(--muted)">—</td>
+          <td style="color:var(--muted)">No open positions</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-cyan"></span>Cyan</div></td>
+          <td style="color:var(--muted)">Heartbeat pulse</td>
+          <td style="color:var(--muted)">Setup / AP config mode</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green"></span>Green</div></td>
+          <td>Slow blink — 2 000 ms</td>
+          <td>+P&amp;L, below 5%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red"></span>Red</div></td>
+          <td>Slow blink — 2 000 ms</td>
+          <td>−P&amp;L, below 5%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green"></span>Green</div></td>
+          <td>Normal blink — 1 000 ms</td>
+          <td>+P&amp;L, 5% – 25%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red"></span>Red</div></td>
+          <td>Normal blink — 1 000 ms</td>
+          <td>−P&amp;L, 5% – 25%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green"></span>Green</div></td>
+          <td>Fast blink — 500 ms</td>
+          <td>+P&amp;L, 25% – 50%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red"></span>Red</div></td>
+          <td>Fast blink — 500 ms</td>
+          <td>−P&amp;L, 25% – 50%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green"></span>Green</div></td>
+          <td>Rapid blink — 250 ms</td>
+          <td>+P&amp;L, 50% – 75%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red"></span>Red</div></td>
+          <td>Rapid blink — 250 ms</td>
+          <td>−P&amp;L, 50% – 75%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green"></span>Green</div></td>
+          <td>Frantic blink — 125 ms</td>
+          <td>+P&amp;L, 75% – 100%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red"></span>Red</div></td>
+          <td>Frantic blink — 125 ms</td>
+          <td>−P&amp;L, 75% – 100%</td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-green-s"></span><strong>Solid Green</strong></div></td>
+          <td><strong>Continuous</strong></td>
+          <td><strong>P&amp;L ≥ +100% — Moon</strong></td>
+        </tr>
+        <tr>
+          <td><div class="led-label"><span class="led-dot dot-red-s"></span><strong>Solid Red</strong></div></td>
+          <td><strong>Continuous</strong></td>
+          <td style="color:var(--red)"><strong>P&amp;L ≤ −100% — Act fast</strong></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== FOOTER ===== -->
+  <footer>
+    <p>
+      <a href="https://github.com/Silexperience210/DegenBeat" target="_blank" rel="noopener">GitHub</a>
+      &nbsp;·&nbsp;
+      <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.1.0" target="_blank" rel="noopener">Release v2.1.0</a>
+      &nbsp;·&nbsp;
+      <a href="https://lnmarkets.com" target="_blank" rel="noopener">LN Markets</a>
+      &nbsp;·&nbsp;
+      MIT License
+    </p>
+    <p style="margin-top:8px;">
+      Built with <a href="https://esphome.github.io/esp-web-tools/" target="_blank" rel="noopener">ESP Web Tools</a>
+    </p>
+    <div class="disclaimer">
+      ⚠️ Leveraged Bitcoin trading carries a significant risk of capital loss.
+      This project is provided for educational purposes only. Trade responsibly.
+    </div>
+  </footer>
+
+</div>
+</body>
+</html>
