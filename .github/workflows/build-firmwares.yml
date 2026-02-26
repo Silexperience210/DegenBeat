@@ -1,0 +1,156 @@
+name: Build Firmwares
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-sunton:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install PlatformIO
+      run: |
+        pip install platformio
+    
+    - name: Build Sunton ESP32-2432S028R
+      run: |
+        # Copier la config Sunton
+        cp platformio-multi.ini platformio.ini
+        # Modifier pour ne garder que l'env Sunton
+        sed -i '/HARDWARE 2/,/upload_speed/d' platformio.ini
+        pio run -e sunton-esp32-2432s028r
+    
+    - name: Rename firmware
+      run: |
+        mkdir -p release
+        cp .pio/build/sunton-esp32-2432s028r/firmware.bin release/degenbeat-sunton-2432s028r.bin
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-sunton
+        path: release/degenbeat-sunton-2432s028r.bin
+
+  build-lcdwiki-s3:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install PlatformIO
+      run: |
+        pip install platformio
+    
+    - name: Build LCDWiki ESP32-S3
+      run: |
+        # Copier la config LCDWiki
+        cp platformio-multi.ini platformio.ini
+        # Modifier pour ne garder que l'env LCDWiki
+        sed -i '/HARDWARE 1/,/HARDWARE 2/d' platformio.ini
+        sed -i '1,/upload_speed/{/upload_speed/!d}' platformio.ini
+        pio run -e lcdwiki-esp32s3-28p
+    
+    - name: Rename firmware
+      run: |
+        mkdir -p release
+        cp .pio/build/lcdwiki-esp32s3-28p/firmware.bin release/degenbeat-lcdwiki-esp32s3-28p.bin
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-lcdwiki-s3
+        path: release/degenbeat-lcdwiki-esp32s3-28p.bin
+
+  create-release:
+    needs: [build-sunton, build-lcdwiki-s3]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: release
+        merge-multiple: true
+    
+    - name: List files
+      run: ls -la release/
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: release/*.bin
+        generate_release_notes: true
+        body: |
+          ## DegenBeat Multi-Hardware Release
+          
+          ### Firmwares inclus
+          - `degenbeat-sunton-2432s028r.bin` - Pour Sunton ESP32-2432S028R
+          - `degenbeat-lcdwiki-esp32s3-28p.bin` - Pour LCDWiki ESP32-S3 2.8inch
+          
+          ### Flashage via WebFlasher
+          Rendez-vous sur la page GitHub Pages du projet pour flasher directement depuis votre navigateur.
+          
+          ### Flashage manuel
+          ```bash
+          # Pour Sunton
+          esptool.py --chip esp32 write_flash 0x0 degenbeat-sunton-2432s028r.bin
+          
+          # Pour LCDWiki ESP32-S3
+          esptool.py --chip esp32s3 write_flash 0x0 degenbeat-lcdwiki-esp32s3-28p.bin
+          ```
+
+  deploy-webflasher:
+    needs: [build-sunton, build-lcdwiki-s3]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download firmwares
+      uses: actions/download-artifact@v4
+      with:
+        path: firmwares
+        merge-multiple: true
+    
+    - name: Setup Pages
+      uses: actions/configure-pages@v4
+    
+    - name: Copy firmwares to webflasher
+      run: |
+        mkdir -p _site/firmwares
+        cp firmwares/*.bin _site/firmwares/
+        cp firmwares/*.json _site/firmwares/
+        cp -r webflasher/* _site/
+    
+    - name: Upload to GitHub Pages
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: _site
+    
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4

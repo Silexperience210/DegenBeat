@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DegenBeat - Web Flasher</title>
+    <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 100%);
+            min-height: 100vh;
+            color: #ffffff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px;
+        }
+        
+        .logo {
+            font-size: 3em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .logo span:first-child {
+            color: #00ffff;
+        }
+        
+        .logo span:last-child {
+            color: #ff0040;
+        }
+        
+        .tagline {
+            color: #888;
+            font-size: 1.2em;
+        }
+        
+        .hardware-selector {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .selector-title {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #00ffff;
+            font-size: 1.3em;
+        }
+        
+        .hardware-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .hardware-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid #333;
+            border-radius: 15px;
+            padding: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .hardware-card:hover {
+            border-color: #00ffff;
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 255, 255, 0.2);
+        }
+        
+        .hardware-card.selected {
+            border-color: #00ff00;
+            background: rgba(0, 255, 0, 0.1);
+        }
+        
+        .hardware-card.selected::after {
+            content: "✓";
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            color: #00ff00;
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .hardware-name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #ffffff;
+        }
+        
+        .hardware-specs {
+            font-size: 0.9em;
+            color: #888;
+            line-height: 1.6;
+        }
+        
+        .hardware-specs li {
+            margin-left: 20px;
+            margin-bottom: 5px;
+        }
+        
+        .chip-badge {
+            display: inline-block;
+            background: #ff0040;
+            color: white;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            margin-bottom: 10px;
+        }
+        
+        .flash-section {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .flash-title {
+            color: #00ffff;
+            margin-bottom: 20px;
+            font-size: 1.2em;
+        }
+        
+        .selected-hardware {
+            color: #00ff00;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        .no-hardware {
+            color: #ff0040;
+            font-style: italic;
+        }
+        
+        esp-web-install-button {
+            --esp-web-button-background: #ff0040;
+            --esp-web-button-color: white;
+            --esp-web-button-border-radius: 10px;
+            --esp-web-button-padding: 15px 40px;
+            --esp-web-button-font-size: 1.1em;
+        }
+        
+        esp-web-install-button[install-unsupported] {
+            display: none;
+        }
+        
+        .browser-not-supported {
+            background: rgba(255, 0, 64, 0.2);
+            border: 2px solid #ff0040;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .browser-not-supported h3 {
+            color: #ff0040;
+            margin-bottom: 10px;
+        }
+        
+        .instructions {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+        }
+        
+        .instructions h3 {
+            color: #00ffff;
+            margin-bottom: 15px;
+        }
+        
+        .instructions ol {
+            margin-left: 25px;
+            line-height: 1.8;
+            color: #ccc;
+        }
+        
+        .instructions li {
+            margin-bottom: 10px;
+        }
+        
+        .warning {
+            background: rgba(255, 193, 7, 0.2);
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .warning h4 {
+            color: #ffc107;
+            margin-bottom: 10px;
+        }
+        
+        footer {
+            margin-top: 40px;
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        footer a {
+            color: #00ffff;
+            text-decoration: none;
+        }
+        
+        footer a:hover {
+            text-decoration: underline;
+        }
+        
+        @media (max-width: 600px) {
+            .logo {
+                font-size: 2em;
+            }
+            
+            .hardware-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo"><span>Degen</span><span>Beat</span></div>
+            <p class="tagline">Flashage direct depuis le navigateur - Web Installer</p>
+        </header>
+
+        <div class="hardware-selector">
+            <h2 class="selector-title">📱 Sélectionnez votre hardware</h2>
+            <div class="hardware-grid">
+                <!-- Sunton ESP32-2432S028R -->
+                <div class="hardware-card" data-manifest="../firmwares/manifest-sunton-2432s028r.json" data-name="Sunton ESP32-2432S028R" onclick="selectHardware(this)">
+                    <span class="chip-badge">ESP32</span>
+                    <div class="hardware-name">Sunton ESP32-2432S028R</div>
+                    <ul class="hardware-specs">
+                        <li>Display ST7789 320×240</li>
+                        <li>Touch XPT2046 résistif</li>
+                        <li>RGB LED 3 pins</li>
+                        <li>4MB Flash, 520KB RAM</li>
+                        <li>Orientation paysage</li>
+                    </ul>
+                </div>
+
+                <!-- LCDWiki ESP32-S3 2.8inch -->
+                <div class="hardware-card" data-manifest="../firmwares/manifest-lcdwiki-esp32s3-28p.json" data-name="LCDWiki ESP32-S3 2.8inch" onclick="selectHardware(this)">
+                    <span class="chip-badge" style="background: #00ff00; color: #000;">ESP32-S3</span>
+                    <div class="hardware-name">LCDWiki ESP32-S3 2.8inch</div>
+                    <ul class="hardware-specs">
+                        <li>Display ILI9341 240×320</li>
+                        <li>Touch FT6336U capacitif</li>
+                        <li>RGB LED single-line</li>
+                        <li>16MB Flash, 8MB PSRAM</li>
+                        <li>Orientation portrait</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="flash-section">
+            <h2 class="flash-title">⚡ Flashage</h2>
+            <p id="selected-hardware-display" class="no-hardware">Veuillez sélectionner un hardware ci-dessus</p>
+            
+            <esp-web-install-button 
+                id="install-button"
+                manifest=""
+                hide-progress>
+                <button slot="activate">Connecter et Flasher</button>
+                <span slot="unsupported" class="browser-not-supported">
+                    <h3>⚠️ Navigateur non supporté</h3>
+                    <p>Ce web flasher nécessite Chrome, Edge ou Opera sur desktop.<br>
+                    Le WebSerial n'est pas disponible sur votre navigateur actuel.</p>
+                </span>
+                <span slot="not-allowed">
+                    <h3>⚠️ Permission refusée</h3>
+                    <p>L'accès au port série a été refusé. Veuillez autoriser l'accès.</p>
+                </span>
+            </esp-web-install-button>
+        </div>
+
+        <div class="warning">
+            <h4>⚠️ Important</h4>
+            <p>Cette opération effacera toutes les données existantes sur l'appareil. 
+            Assurez-vous d'avoir noté vos identifiants LN Markets si vous souhaitez les conserver.</p>
+        </div>
+
+        <div class="instructions">
+            <h3>📋 Instructions</h3>
+            <ol>
+                <li><strong>Sélectionnez votre hardware</strong> dans la liste ci-dessus</li>
+                <li><strong>Connectez votre appareil</strong> en USB à votre ordinateur</li>
+                <li>Cliquez sur <strong>"Connecter et Flasher"</strong></li>
+                <li>Sélectionnez le port série correspondant à votre ESP32</li>
+                <li>Attendez la fin du flashage (barre de progression)</li>
+                <li>L'appareil redémarrera automatiquement</li>
+                <li>Connectez-vous au WiFi <strong>"DEGENBEAT"</strong> pour configurer</li>
+            </ol>
+        </div>
+
+        <footer>
+            <p>DegenBeat - Station de trading Bitcoin autonome</p>
+            <p><a href="https://github.com/Silexperience210/DegenBeat" target="_blank">GitHub</a> | 
+               <a href="https://lnmarkets.com" target="_blank">LN Markets</a></p>
+        </footer>
+    </div>
+
+    <script>
+        let selectedManifest = '';
+        let selectedName = '';
+
+        function selectHardware(element) {
+            // Désélectionner tous les cards
+            document.querySelectorAll('.hardware-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Sélectionner le card cliqué
+            element.classList.add('selected');
+            
+            // Récupérer les données
+            selectedManifest = element.getAttribute('data-manifest');
+            selectedName = element.getAttribute('data-name');
+            
+            // Mettre à jour l'affichage
+            const display = document.getElementById('selected-hardware-display');
+            display.textContent = 'Hardware sélectionné: ' + selectedName;
+            display.classList.remove('no-hardware');
+            display.classList.add('selected-hardware');
+            
+            // Mettre à jour le bouton de flashage
+            const installButton = document.getElementById('install-button');
+            installButton.setAttribute('manifest', selectedManifest);
+        }
+
+        // Détection du support WebSerial
+        if (!navigator.serial) {
+            console.log('WebSerial non supporté');
+        }
+    </script>
+</body>
+</html>

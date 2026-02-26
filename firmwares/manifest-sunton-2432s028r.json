@@ -1,0 +1,16 @@
+{
+  "name": "DegenBeat - Sunton ESP32-2432S028R",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32",
+      "parts": [
+        {
+          "path": "degenbeat-sunton-2432s028r.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ],
+  "new_install_prompt_erase": true
+}

@@ -1,0 +1,16 @@
+{
+  "name": "DegenBeat - LCDWiki ESP32-S3 2.8inch",
+  "version": "1.0.0",
+  "builds": [
+    {
+      "chipFamily": "ESP32-S3",
+      "parts": [
+        {
+          "path": "degenbeat-lcdwiki-esp32s3-28p.bin",
+          "offset": 0
+        }
+      ]
+    }
+  ],
+  "new_install_prompt_erase": true
+}
