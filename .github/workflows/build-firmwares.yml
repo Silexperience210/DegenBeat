@@ -23,16 +23,12 @@ jobs:
     
     - name: Build Sunton ESP32-2432S028R
       run: |
-        # Copier la config Sunton
-        cp platformio-multi.ini platformio.ini
-        # Modifier pour ne garder que l'env Sunton
-        sed -i '/HARDWARE 2/,/upload_speed/d' platformio.ini
-        pio run -e sunton-esp32-2432s028r
+        pio run -e sunton-2432s028r
     
     - name: Rename firmware
       run: |
         mkdir -p release
-        cp .pio/build/sunton-esp32-2432s028r/firmware.bin release/degenbeat-sunton-2432s028r.bin
+        cp .pio/build/sunton-2432s028r/firmware.bin release/degenbeat-sunton-2432s028r.bin
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
@@ -56,11 +52,6 @@ jobs:
     
     - name: Build LCDWiki ESP32-S3
       run: |
-        # Copier la config LCDWiki
-        cp platformio-multi.ini platformio.ini
-        # Modifier pour ne garder que l'env LCDWiki
-        sed -i '/HARDWARE 1/,/HARDWARE 2/d' platformio.ini
-        sed -i '1,/upload_speed/{/upload_speed/!d}' platformio.ini
         pio run -e lcdwiki-esp32s3-28p
     
     - name: Rename firmware
@@ -121,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
-      contents: write
+      contents: read
       pages: write
       id-token: write
     environment:
@@ -133,16 +124,16 @@ jobs:
     - name: Download firmwares
       uses: actions/download-artifact@v4
       with:
-        path: firmwares
+        path: firmwares/builds
         merge-multiple: true
     
     - name: Setup Pages
       uses: actions/configure-pages@v4
     
-    - name: Copy firmwares to webflasher
+    - name: Prepare site
       run: |
-        mkdir -p _site/firmwares
-        cp firmwares/*.bin _site/firmwares/
+        mkdir -p _site/firmwares/builds
+        cp firmwares/builds/*.bin _site/firmwares/builds/
         cp firmwares/*.json _site/firmwares/
         cp -r webflasher/* _site/
     
