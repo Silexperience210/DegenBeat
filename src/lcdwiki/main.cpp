@@ -16,7 +16,7 @@
 #include <SPIFFS.h>
 #include <TFT_eSPI.h>
 #include <Wire.h>
-#include <FT6336U.h>
+#include <RAK14014_FT6336U.h>
 #include <FastLED.h>
 #include <mbedtls/md.h>
 #include <mbedtls/aes.h>
@@ -49,7 +49,7 @@ TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite priceSprite = TFT_eSprite(&tft);
 
 // Touch FT6336U (I2C)
-FT6336U ft6336u(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_IRQ);
+FT6336U ft6336u;
 
 WebServer server(80);
 DNSServer dnsServer;
@@ -528,14 +528,16 @@ void switchScreen(Screen new_screen) {
 void handleTouch() {
   if (millis() - last_touch_time < TOUCH_DEBOUNCE) return;
   
-  if (!ft6336u.read_touch()) {
+  // Vérifier si touché (read_td_status retourne le nombre de touch points)
+  uint8_t touch_count = ft6336u.read_td_status();
+  if (touch_count == 0) {
     last_touch_x = last_touch_y = -1;
     return;
   }
   
   // FT6336U retourne des coordonnées 0-239 (x) et 0-319 (y) en portrait
-  int x = ft6336u.get_touch_x();
-  int y = ft6336u.get_touch_y();
+  int x = ft6336u.read_touch1_x();
+  int y = ft6336u.read_touch1_y();
   
   // Vérifier si les coordonnées sont valides
   if (x < 0 || x > 239 || y < 0 || y > 319) return;
