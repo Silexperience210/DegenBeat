@@ -2345,7 +2345,7 @@ void testAPIConnection() {
     xTaskCreatePinnedToCore(
       priceUpdateTask,
       "PriceUpdate",
-      8192,
+      20480,
       NULL,
       1,
       &price_update_task,
