@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>DegenBeat — Web Flasher</title>
-  <meta name="description" content="Flash DegenBeat firmware to your Sunton ESP32-2432S028R directly from your browser. No software needed." />
+  <meta name="description" content="Flash DegenBeat firmware to your Sunton ESP32-2432S028R or LCDWiki ESP32-S3 directly from your browser. No software needed." />
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     /* ===== RESET ===== */
@@ -370,18 +370,20 @@
       <span class="logo-text">DegenBeat</span>
     </div>
     <p class="tagline">
-      Bitcoin trading terminal for the ESP32.<br/>
-      Flash your Sunton board directly from this page — no software needed.
+      Bitcoin trading terminal for ESP32 &amp; ESP32-S3.<br/>
+      Flash your board directly from this page — no software needed.
     </p>
-    <span class="version-badge">FIRMWARE v2.1.0</span>
+    <span class="version-badge">FIRMWARE v2.2.0</span>
   </header>
 
   <!-- ===== HARDWARE ALERT ===== -->
   <div class="alert">
     <span class="alert-icon">🔌</span>
     <span class="alert-text">
-      <strong>Required hardware:</strong> Sunton ESP32-2432S028R (ST7789 320×240, XPT2046 touch, RGB LED).
-      This firmware is pinned to this board. It will not work correctly on other ESP32 variants.
+      <strong>Supported hardware — auto-detected at flash time:</strong><br/>
+      &bull; <strong>Sunton ESP32-2432S028R</strong> — ST7789 320×240, XPT2046 touch, RGB LED (ESP32)<br/>
+      &bull; <strong>LCDWiki ESP32-S3 2.8inch</strong> — ILI9341 320×240, FT6336U touch, RGB LED (ESP32-S3)<br/>
+      The correct firmware is selected automatically based on the chip detected in your board.
     </span>
   </div>
 
@@ -394,14 +396,14 @@
         <div class="step-num">1</div>
         <div class="step-body">
           <div class="step-label">Connect your board</div>
-          <div class="step-desc">Plug the Sunton ESP32 into your PC via USB. No drivers needed on Windows 10+ / macOS / Linux.</div>
+          <div class="step-desc">Plug your board into your PC via USB. No drivers needed on Windows 10+ / macOS / Linux.</div>
         </div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
         <div class="step-body">
           <div class="step-label">Click Install below</div>
-          <div class="step-desc">Your browser will ask to select a serial port — choose the one labeled <code>CP210x</code> or <code>CH340</code>.</div>
+          <div class="step-desc">Your browser will ask to select a serial port — choose <code>CP210x</code> / <code>CH340</code> for Sunton ESP32, or <code>USB JTAG/serial</code> for ESP32-S3.</div>
         </div>
       </div>
       <div class="step">
@@ -433,7 +435,7 @@
       </esp-web-install-button>
       <p class="browser-note">
         Requires Chrome or Edge (desktop).
-        <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.1.0" target="_blank" rel="noopener">
+        <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.2.0" target="_blank" rel="noopener">
           Download binaries manually →
         </a>
       </p>
@@ -563,7 +565,7 @@
     <p>
       <a href="https://github.com/Silexperience210/DegenBeat" target="_blank" rel="noopener">GitHub</a>
       &nbsp;·&nbsp;
-      <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.1.0" target="_blank" rel="noopener">Release v2.1.0</a>
+      <a href="https://github.com/Silexperience210/DegenBeat/releases/tag/v2.2.0" target="_blank" rel="noopener">Release v2.2.0</a>
       &nbsp;·&nbsp;
       <a href="https://lnmarkets.com" target="_blank" rel="noopener">LN Markets</a>
       &nbsp;·&nbsp;
