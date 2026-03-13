@@ -6,7 +6,7 @@
       "chipFamily": "ESP32",
       "parts": [
         {
-          "path": "https://github.com/Silexperience210/DegenBeat/releases/download/v2.2.0/degenbeat-sunton-2432s028r.bin",
+          "path": "degenbeat-sunton-2432s028r.bin",
           "offset": 0
         }
       ]
@@ -15,7 +15,7 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "https://github.com/Silexperience210/DegenBeat/releases/download/v2.2.0/degenbeat-lcdwiki-esp32s3-28p.bin",
+          "path": "degenbeat-lcdwiki-esp32s3-28p.bin",
           "offset": 0
         }
       ]
