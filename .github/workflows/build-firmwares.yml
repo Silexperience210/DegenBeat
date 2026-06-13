@@ -25,16 +25,22 @@ jobs:
       run: |
         pio run -e sunton-2432s028r
     
-    - name: Rename firmware
+    - name: Create merged firmware
       run: |
         mkdir -p release
+        esptool.py --chip esp32 merge-bin \
+          -o release/degenbeat-sunton-2432s028r-merged.bin \
+          --flash-mode dio --flash-size 4MB \
+          0x1000 .pio/build/sunton-2432s028r/bootloader.bin \
+          0x8000 .pio/build/sunton-2432s028r/partitions.bin \
+          0x10000 .pio/build/sunton-2432s028r/firmware.bin
         cp .pio/build/sunton-2432s028r/firmware.bin release/degenbeat-sunton-2432s028r.bin
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: firmware-sunton
-        path: release/degenbeat-sunton-2432s028r.bin
+        path: release/*sunton*
 
   build-lcdwiki-s3:
     runs-on: ubuntu-latest
@@ -54,16 +60,22 @@ jobs:
       run: |
         pio run -e lcdwiki-esp32s3-28p
     
-    - name: Rename firmware
+    - name: Create merged firmware
       run: |
         mkdir -p release
+        esptool.py --chip esp32s3 merge-bin \
+          -o release/degenbeat-lcdwiki-esp32s3-28p-merged.bin \
+          --flash-mode dio --flash-size 16MB \
+          0x0 .pio/build/lcdwiki-esp32s3-28p/bootloader.bin \
+          0x8000 .pio/build/lcdwiki-esp32s3-28p/partitions.bin \
+          0x10000 .pio/build/lcdwiki-esp32s3-28p/firmware.bin
         cp .pio/build/lcdwiki-esp32s3-28p/firmware.bin release/degenbeat-lcdwiki-esp32s3-28p.bin
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: firmware-lcdwiki-s3
-        path: release/degenbeat-lcdwiki-esp32s3-28p.bin
+        path: release/*lcdwiki*
 
   create-release:
     needs: [build-sunton, build-lcdwiki-s3]
@@ -92,19 +104,19 @@ jobs:
           ## DegenBeat Multi-Hardware Release
           
           ### Firmwares inclus
-          - `degenbeat-sunton-2432s028r.bin` - Pour Sunton ESP32-2432S028R
-          - `degenbeat-lcdwiki-esp32s3-28p.bin` - Pour LCDWiki ESP32-S3 2.8inch
+          - `degenbeat-sunton-2432s028r-merged.bin` - Pour Sunton ESP32-2432S028R (flash à l'offset 0x0)
+          - `degenbeat-lcdwiki-esp32s3-28p-merged.bin` - Pour LCDWiki ESP32-S3 2.8inch (flash à l'offset 0x0)
           
           ### Flashage via WebFlasher
           Rendez-vous sur la page GitHub Pages du projet pour flasher directement depuis votre navigateur.
           
-          ### Flashage manuel
+          ### Flashage manuel (utilisez les fichiers `-merged.bin`)
           ```bash
           # Pour Sunton
-          esptool.py --chip esp32 write_flash 0x0 degenbeat-sunton-2432s028r.bin
+          esptool.py --chip esp32 --baud 921600 write_flash -z 0x0 degenbeat-sunton-2432s028r-merged.bin
           
           # Pour LCDWiki ESP32-S3
-          esptool.py --chip esp32s3 write_flash 0x0 degenbeat-lcdwiki-esp32s3-28p.bin
+          esptool.py --chip esp32s3 --baud 921600 write_flash -z 0x0 degenbeat-lcdwiki-esp32s3-28p-merged.bin
           ```
 
   deploy-webflasher:
@@ -124,7 +136,7 @@ jobs:
     - name: Download firmwares
       uses: actions/download-artifact@v4
       with:
-        path: firmwares/builds
+        path: firmwares
         merge-multiple: true
     
     - name: Setup Pages
@@ -132,8 +144,8 @@ jobs:
     
     - name: Prepare site
       run: |
-        mkdir -p _site/firmwares/builds
-        cp firmwares/builds/*.bin _site/firmwares/builds/
+        mkdir -p _site/firmwares
+        cp firmwares/*-merged.bin _site/firmwares/
         cp firmwares/*.json _site/firmwares/
         cp -r webflasher/* _site/
     

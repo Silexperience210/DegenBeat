@@ -88,13 +88,35 @@ cd DegenBeat-ESP32S3-Adapted
 ```
 
 2. **Compiler et uploader**:
+
+> ⚠️ **Important**: l'environnement par défaut est maintenant `sunton-2432s028r`.  
+> Si vous ciblez le LCDWiki ESP32-S3, précisez explicitement l'environnement.
+
 ```bash
+# Pour Sunton ESP32-2432S028R (défaut)
 pio run --target upload
+
+# Pour LCDWiki ESP32-S3 2.8inch
+pio run -e lcdwiki-esp32s3-28p --target upload
 ```
 
 3. **Monitor série**:
 ```bash
 pio device monitor --baud 115200
+```
+
+## 🔌 Flashage depuis les releases (sans compiler)
+
+### Web Flasher (recommandé)
+Rendez-vous sur la page GitHub Pages du projet et sélectionnez votre hardware.
+
+### esptool.py (fichiers `-merged.bin` à flasher à l'offset 0x0)
+```bash
+# Sunton ESP32-2432S028R
+esptool.py --chip esp32 --baud 921600 write_flash -z 0x0 degenbeat-sunton-2432s028r-merged.bin
+
+# LCDWiki ESP32-S3 2.8inch
+esptool.py --chip esp32s3 --baud 921600 write_flash -z 0x0 degenbeat-lcdwiki-esp32s3-28p-merged.bin
 ```
 
 ## 🖥️ Configuration initiale
@@ -119,7 +141,7 @@ L'interface a été adaptée pour l'écran portrait 240×320:
 1. **Touch capacitif**: Plus réactif que le résistif, pas besoin de calibration
 2. **LED RGB**: Utilise FastLED avec une seule LED WS2812-style
 3. **PSRAM**: Le projet peut utiliser la PSRAM si besoin de plus de mémoire
-4. **Partition**: Utilise `default_16MB.csv` pour les 16MB de flash
+4. **Partition**: Utilise `default_16MB.csv` pour les 16MB de flash (LCDWiki S3)
 
 ## 🐛 Dépannage
 

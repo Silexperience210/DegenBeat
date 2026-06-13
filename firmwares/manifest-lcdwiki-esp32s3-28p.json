@@ -6,7 +6,7 @@
       "chipFamily": "ESP32-S3",
       "parts": [
         {
-          "path": "degenbeat-lcdwiki-esp32s3-28p.bin",
+          "path": "degenbeat-lcdwiki-esp32s3-28p-merged.bin",
           "offset": 0
         }
       ]
