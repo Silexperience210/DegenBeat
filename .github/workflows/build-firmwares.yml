@@ -148,6 +148,9 @@ jobs:
         cp firmwares/*-merged.bin _site/firmwares/
         cp firmwares/*.json _site/firmwares/
         cp -r webflasher/* _site/
+        # webflasher/index.html assumes it lives in webflasher/ (../firmwares/).
+        # On GitHub Pages it is served from the root, so fix the manifest paths.
+        sed -i 's|\.\./firmwares/|firmwares/|g' _site/index.html
     
     - name: Upload to GitHub Pages
       uses: actions/upload-pages-artifact@v3
